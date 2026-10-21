@@ -210,9 +210,15 @@ def run_repo(entry, defaults, workdir):
     timeout = int(entry.get("timeout", defaults.get("timeout", 1200)))
     wanted = entry.get("kernel", defaults.get("kernel", "auto"))
     rerun_wait = int(defaults.get("rerun_wait", 60))
+    notebooks = find_notebooks(root, entry.get("skip", [])) if root.is_dir() else [root]
     env_logs, kernels_by_folder = {}, {}
     if entry.get("environments", defaults.get("environments")) == "build" and root.is_dir():
+        # Only environments that serve a notebook in scope (skipped folders build nothing).
+        nb_dirs = [nb.parent.resolve() for nb in notebooks]
         for env_file in env_files(root):
+            env_dir = env_file.parent.resolve()
+            if not any(d == env_dir or env_dir in d.parents for d in nb_dirs):
+                continue
             label = f"{name}-{os.path.relpath(env_file.parent, root)}".rstrip("-.")
             print(f"  building environment {os.path.relpath(env_file, root)}", flush=True)
             kernel, log = build_env(env_file, workdir, label)
@@ -221,7 +227,6 @@ def run_repo(entry, defaults, workdir):
             if not kernel:
                 print("  environment build failed; notebooks there use the default kernel", flush=True)
     installed = _installed_kernels()
-    notebooks = find_notebooks(root, entry.get("skip", [])) if root.is_dir() else [root]
     if not root.is_dir():
         root = root.parent
     print(f"\n=== {name}: {len(notebooks)} notebook(s) ===", flush=True)

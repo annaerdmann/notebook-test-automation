@@ -14,6 +14,8 @@ def test_labels():
     assert label_error("NameError", "name 'options' is not defined", "", {"options"}) == FOLLOW_ON
     assert label_error("NameError", "name 'typo' is not defined", "", {"options"}) == NOTEBOOK
     assert label_error("ZeroDivisionError", "division by zero", "", set()) == NOTEBOOK
+    assert label_error("KeyError", "'access_token'", "", set()) == CREDENTIALS
+    assert label_error("HTTPError", "400 Client Error: Bad Request for url: https://x/hda-broker/gettoken", "", set()) == CREDENTIALS
     # A failed star import makes every later NameError a follow-on error.
     assert label_error("NameError", "name 'hda_widget' is not defined", "", {"*"}) == FOLLOW_ON
 

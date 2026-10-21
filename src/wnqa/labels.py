@@ -29,7 +29,7 @@ SERVICE_RE = re.compile(
     r"Max retries exceeded|Connection (refused|reset|aborted)|RemoteDisconnected", re.I)
 CREDENTIALS_RE = re.compile(
     r"\b40[13]\b|Unauthori[sz]ed|Forbidden|invalid (user|credentials|token)|credential|\.hdarc|"
-    r"authenticat|StdinNotImplementedError|raw_input was called|getpass", re.I)
+    r"authenticat|StdinNotImplementedError|raw_input was called|getpass|access_token|gettoken", re.I)
 # Services the WEkEO JupyterHub provides but a VM or laptop usually lacks.
 PLATFORM_RE = re.compile(
     r"dask-gateway address|NVIDIA driver|CUDA (driver|is not available)|no CUDA GPUs|"
