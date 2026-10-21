@@ -3,7 +3,7 @@ import json
 import nbformat
 from nbformat.v4 import new_code_cell, new_markdown_cell, new_notebook
 
-from wnqa.labels import CREDENTIALS, FOLLOW_ON, NOTEBOOK, PACKAGE, SERVICE, label_error
+from wnqa.labels import CREDENTIALS, FOLLOW_ON, NOTEBOOK, PACKAGE, PLATFORM, SERVICE, label_error
 from wnqa.run import main
 
 
@@ -14,6 +14,16 @@ def test_labels():
     assert label_error("NameError", "name 'options' is not defined", "", {"options"}) == FOLLOW_ON
     assert label_error("NameError", "name 'typo' is not defined", "", {"options"}) == NOTEBOOK
     assert label_error("ZeroDivisionError", "division by zero", "", set()) == NOTEBOOK
+    # A failed star import makes every later NameError a follow-on error.
+    assert label_error("NameError", "name 'hda_widget' is not defined", "", {"*"}) == FOLLOW_ON
+
+
+def test_platform_labels():
+    msg = "No dask-gateway address provided or found in configuration"
+    assert label_error("ValueError", msg, "", set()) == PLATFORM
+    assert label_error("RuntimeError", "Found no NVIDIA driver on your system.", "", set()) == PLATFORM
+    assert label_error("ConnectError", "[Errno 111] Connection refused", "ollama.chat(model='x')", set()) == PLATFORM
+    assert label_error("ConnectError", "[Errno 111] Connection refused", "requests.get(url)", set()) == SERVICE
 
 
 def test_run_continues_after_errors_and_labels_them(tmp_path):

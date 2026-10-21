@@ -120,15 +120,16 @@ def execute(nb_path, kernel, timeout, out_dir):
                     for out in cell.get("outputs", []):
                         if out.get("output_type") == "error":
                             tb = _strip_ansi("\n".join(out.get("traceback", [])))
-                            cell_errs.append((out.get("ename", ""), out.get("evalue", ""), "\n".join(tb.splitlines()[-20:])))
+                            cell_errs.append((out.get("ename", ""), out.get("evalue", ""), tb))
                 except Exception as e:  # timeout, dead kernel
                     cell_errs.append((type(e).__name__, str(e)[:500], str(e)[-2000:]))
                     if type(e).__name__ == "DeadKernelError":
                         errors.append(CellError(i + 1, code_index, _preview(cell), *cell_errs[-1], label="kernel_died"))
                         break
                 for ename, evalue, tb in cell_errs:
-                    label = label_error(ename, evalue, tb, failed_names)
-                    errors.append(CellError(i + 1, code_index, _preview(cell), ename, evalue, tb, label))
+                    label = label_error(ename, evalue, tb + "\n" + cell.source, failed_names)
+                    errors.append(CellError(i + 1, code_index, _preview(cell), ename, evalue,
+                                            "\n".join(tb.splitlines()[-20:]), label))
                 if cell_errs:
                     failed_names |= defined_names(cell.source)
     except Exception as e:  # kernel could not start

@@ -107,6 +107,7 @@ Each error gets a label:
 | missing package | `ModuleNotFoundError`/`ImportError`: the environment lacks a package. |
 | credentials | Login or permission failed, or the notebook asked for input. |
 | service unavailable | HTTP 5xx, timeouts, connection errors. The notebook is rerun once. |
+| needs JupyterHub service | Dask Gateway, a GPU or the Ollama server is missing. Expected on a VM or laptop; on the JupyterHub it is a real failure. |
 | timeout / kernel died | A cell ran longer than `timeout`, or the kernel crashed (often memory). |
 
 ### Dashboard and catalog list
@@ -116,7 +117,7 @@ wnqa dashboard reports/*.json --out dashboard.html
 wnqa catalog reports/notebook_test_report_2026-10-19.json --out catalog_exclude.json
 ```
 
-The catalog list holds notebooks with notebook errors, missing packages, timeouts or crashes. Service outages and credential problems do not count. It is only meaningful for runs on the WEkEO JupyterHub.
+The catalog list holds notebooks with notebook errors, missing packages, timeouts or crashes. Service outages, credential problems and missing JupyterHub services do not count. It is only meaningful for runs on the WEkEO JupyterHub.
 
 ## Origin and licence
 

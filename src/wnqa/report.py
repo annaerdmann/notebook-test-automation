@@ -40,7 +40,7 @@ def to_markdown(run):
         lines.append(f"| {repo['repo']} | {commit} | {len(res)} | {sum(r['status'] == 'ok' for r in res)} | "
                      f"{sum(r['status'] == 'error' for r in res)} | {by_type} |")
     lines += ["", "Error types: *notebook error* needs the author; *follow-on error* was caused by an earlier failed cell; "
-              "*missing package*, *credentials* and *service unavailable* usually point to the environment, the test account or the platform.", ""]
+              "*missing package*, *credentials*, *service unavailable* and *needs JupyterHub service* usually point to the environment, the test account or the platform.", ""]
 
     for repo in run["repos"]:
         lines += [f"## {repo['repo']}", "", "| Notebook | Status | Duration (s) | Errors | Rerun |", "|---|---|---|---|---|"]
