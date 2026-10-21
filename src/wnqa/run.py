@@ -253,7 +253,7 @@ def main(argv=None):
         ap.error("give a config file or --path")
     if a.kernel:
         cfg["kernel"] = a.kernel
-    workdir = Path(a.workdir or cfg.get("workdir") or "wnqa-work").resolve()
+    workdir = Path(a.workdir or cfg.get("workdir") or "wnqa-work").expanduser().resolve()
     workdir.mkdir(parents=True, exist_ok=True)
 
     started = time.strftime("%Y-%m-%dT%H:%M:%S")
