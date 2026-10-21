@@ -52,3 +52,19 @@ def test_run_continues_after_errors_and_labels_them(tmp_path):
     assert [(e["cell_number"], e["label"]) for e in demo["cell_errors"]] == [(3, PACKAGE), (4, FOLLOW_ON), (5, NOTEBOOK)]
     md = next((tmp_path / "work" / "reports").glob("*.md")).read_text()
     assert "1 follow-on error(s) not listed." in md
+
+
+def test_credential_files_are_restored(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / ".hdarc").write_text("user: real\npassword: secret\n")
+    monkeypatch.setenv("HOME", str(home))
+    nb = new_notebook(cells=[new_code_cell(
+        "import pathlib\npathlib.Path.home().joinpath('.hdarc').write_text('user: <your_user_name>\\n')")])
+    nb.metadata["kernelspec"] = {"name": "python3", "language": "python", "display_name": "Python 3"}
+    nbformat.write(nb, tmp_path / "save.ipynb")
+
+    main(["--path", str(tmp_path / "save.ipynb"), "--workdir", str(tmp_path / "work"), "--kernel", "python3"])
+    assert (home / ".hdarc").read_text() == "user: real\npassword: secret\n"
+    report = json.loads(next((tmp_path / "work" / "reports").glob("*.json")).read_text())
+    assert report["repos"][0]["results"][0]["changed_credentials"] == ["~/.hdarc"]

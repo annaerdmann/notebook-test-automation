@@ -66,6 +66,7 @@ class NotebookRunResult:
     reran: bool = False
     labels: dict = field(default_factory=dict)  # label -> count
     cell_errors: list = field(default_factory=list)
+    changed_credentials: list = field(default_factory=list)  # credential files the notebook overwrote (restored)
 
 
 def _preview(cell, max_len=70):
@@ -145,12 +146,22 @@ def execute(nb_path, kernel, timeout, out_dir):
 def run_notebook(repo_name, repo_root, nb_path, kernel, timeout, out_dir, rerun_wait):
     rel = os.path.relpath(nb_path, repo_root)
     print(f"▶ {repo_name}/{rel} (kernel {kernel})", flush=True)
-    errors, duration, out_path = execute(nb_path, kernel, timeout, out_dir)
+    snap, changed = snapshot_credentials(), set()
+
+    def attempt():
+        try:
+            return execute(nb_path, kernel, timeout, out_dir)
+        finally:
+            for f in restore_credentials(snap):
+                print(f"  notebook changed {f}; restored", flush=True)
+                changed.add(f)
+
+    errors, duration, out_path = attempt()
     reran = False
     if any(e.label == SERVICE for e in errors):
         print(f"  service unavailable, rerunning after {rerun_wait}s", flush=True)
         time.sleep(rerun_wait)
-        errors, duration, out_path = execute(nb_path, kernel, timeout, out_dir)
+        errors, duration, out_path = attempt()
         reran = True
     labels = {}
     for e in errors:
@@ -164,6 +175,7 @@ def run_notebook(repo_name, repo_root, nb_path, kernel, timeout, out_dir, rerun_
         errored_path=str(out_path) if status == "error" else None,
         error_message=f"{len(errors)} cell error(s)" if errors else None,
         reran=reran, labels=labels, cell_errors=[asdict(e) for e in errors],
+        changed_credentials=sorted(changed),
     )
 
 
@@ -194,6 +206,34 @@ def clone(url, ref, dest):
     subprocess.run(["git", "-C", str(dest), "submodule", "update", "--init", "--recursive", "--depth", "1"], check=True)
     head = subprocess.run(["git", "-C", str(dest), "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
     return head
+
+
+# Credential files notebooks may overwrite, e.g. Credentials(username="<your_user_name>", ...).save().
+CREDENTIAL_FILES = ["~/.hdarc", "~/.cdsapirc", "~/.ecmwfdatastoresrc", "~/.netrc", "~/.eumdac/credentials"]
+
+
+def snapshot_credentials():
+    snap = {}
+    for f in CREDENTIAL_FILES:
+        p = Path(f).expanduser()
+        snap[p] = p.read_bytes() if p.is_file() else None
+    return snap
+
+
+def restore_credentials(snap):
+    """Put credential files back as they were. Returns the files a notebook had changed."""
+    changed = []
+    for p, data in snap.items():
+        now = p.read_bytes() if p.is_file() else None
+        if now == data:
+            continue
+        changed.append(str(p).replace(str(Path.home()), "~"))
+        if data is None:
+            p.unlink()
+        else:
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_bytes(data)
+    return changed
 
 
 def run_repo(entry, defaults, workdir):

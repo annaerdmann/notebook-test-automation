@@ -42,6 +42,13 @@ def to_markdown(run):
     lines += ["", "Error types: *notebook error* needs the author; *follow-on error* was caused by an earlier failed cell; "
               "*missing package*, *credentials*, *service unavailable* and *needs JupyterHub service* usually point to the environment, the test account or the platform.", ""]
 
+    overwrote = [(repo["repo"], r) for repo in run["repos"] for r in repo["results"] if r.get("changed_credentials")]
+    if overwrote:
+        lines += ["## Notebooks that overwrote credential files", "",
+                  "wnqa restored the files after each notebook. The notebook should not overwrite existing credentials.", ""]
+        lines += [f"- {name}: `{r['notebook']}` changed {', '.join(r['changed_credentials'])}" for name, r in overwrote]
+        lines.append("")
+
     for repo in run["repos"]:
         lines += [f"## {repo['repo']}", "", "| Notebook | Status | Duration (s) | Errors | Rerun |", "|---|---|---|---|---|"]
         for r in repo["results"]:

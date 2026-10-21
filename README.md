@@ -96,7 +96,7 @@ repos:
     skip: ["**/old/**"]
 ```
 
-Mirrored repositories (submodules) are cloned too. Reports go to `<workdir>/reports/`. Executed notebooks go to `<workdir>/outputs/`; they can contain outputs from your account, so do not publish them. Remove the work folder to clean up everything, environments included.
+Mirrored repositories (submodules) are cloned too. Credential files (`~/.hdarc`, `~/.cdsapirc`, `~/.ecmwfdatastoresrc`, `~/.netrc`, `~/.eumdac/credentials`) are restored after every notebook, because some notebooks save placeholder credentials over them; the report lists those notebooks. Reports go to `<workdir>/reports/`. Executed notebooks go to `<workdir>/outputs/`; they can contain outputs from your account, so do not publish them. Remove the work folder to clean up everything, environments included.
 
 Each error gets a label:
 
