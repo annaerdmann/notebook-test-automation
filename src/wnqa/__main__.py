@@ -1,11 +1,10 @@
-"""Command line entry point: `wnqa check ...` and `wnqa run ...`."""
+"""Command line entry point: `wnqa run ...`."""
 
 import sys
 
 USAGE = """usage: wnqa <command> [options]
 
 commands:
-  check      static WEkEO checks (metadata, launch badge, credentials, secrets, environment file)
   run        execute notebooks and write a test report
   dashboard  build a dashboard page from run reports
   catalog    list notebooks to keep out of the catalog
@@ -18,9 +17,7 @@ def main(argv=None):
         print(USAGE)
         return 0
     command, rest = argv[0], argv[1:]
-    if command == "check":
-        from .check import main as run
-    elif command == "run":
+    if command == "run":
         from .run import main as run
     elif command == "dashboard":
         from .publish import main_dashboard as run
