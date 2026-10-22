@@ -1,0 +1,28 @@
+# WEkEO notebooks, run on the WEkEO JupyterHub (or a VM that mimics it).
+extends: generic
+name: wekeo
+
+labels:
+  platform: {text: needs JupyterHub service, blocking: false}
+
+classify:
+  # Services the WEkEO JupyterHub provides but a VM or laptop usually lacks.
+  platform+:
+    - {label: platform, text_regex: '(?i)dask-gateway address|NVIDIA driver|CUDA (driver|is not available)|no CUDA GPUs|localhost:11434|127\.0\.0\.1:11434'}
+    - {label: platform, evalue_regex: 'Connection refused', text_regex: '(?i)ollama'}
+  # HDA broker token and identity endpoints: a failure there is a login problem, even with a 5xx status.
+  auth+:
+    - {label: credentials, error_regex: '(?i)gettoken|/identity'}
+  credentials+:
+    - {label: credentials, error_regex: '(?i)\.hdarc|gettoken'}
+
+protect_files+: [~/.hdarc, ~/.cdsapirc, ~/.ecmwfdatastoresrc, ~/.eumdac/credentials]
+
+exclude:
+  note: Notebooks that failed for reasons the author has to fix. Only valid if the run was on the WEkEO JupyterHub.
+
+report:
+  error_types_note: >-
+    Error types: *notebook error* needs the author; *follow-on error* was caused by an earlier failed cell;
+    *missing package*, *credentials*, *service unavailable*, *quota exceeded* and *needs JupyterHub service*
+    usually point to the environment, the test account or the platform.

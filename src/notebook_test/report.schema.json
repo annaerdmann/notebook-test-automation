@@ -1,0 +1,202 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "notebook-test report",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "profile",
+    "labels",
+    "texts",
+    "started_at",
+    "finished_at",
+    "host",
+    "repos"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "profile": {
+      "type": "string"
+    },
+    "labels": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "text"
+        ],
+        "properties": {
+          "text": {
+            "type": "string"
+          },
+          "blocking": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    "texts": {
+      "type": "object",
+      "required": [
+        "title",
+        "dashboard_title",
+        "error_types_note",
+        "protect_note",
+        "exclude_note"
+      ],
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "started_at": {
+      "type": "string"
+    },
+    "finished_at": {
+      "type": "string"
+    },
+    "host": {
+      "type": "string"
+    },
+    "repos": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "repo",
+          "profile",
+          "results"
+        ],
+        "properties": {
+          "repo": {
+            "type": "string"
+          },
+          "profile": {
+            "type": "string"
+          },
+          "url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "commit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "environments": {
+            "type": "object"
+          },
+          "results": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "repo",
+                "notebook",
+                "status",
+                "duration_s",
+                "kernel",
+                "labels",
+                "cell_errors"
+              ],
+              "properties": {
+                "repo": {
+                  "type": "string"
+                },
+                "notebook": {
+                  "type": "string"
+                },
+                "status": {
+                  "enum": [
+                    "ok",
+                    "error"
+                  ]
+                },
+                "duration_s": {
+                  "type": "number"
+                },
+                "kernel": {
+                  "type": "string"
+                },
+                "executed_path": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "errored_path": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "error_message": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "reran": {
+                  "type": "boolean"
+                },
+                "labels": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer"
+                  }
+                },
+                "cell_errors": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "cell_number",
+                      "code_cell_number",
+                      "cell_preview",
+                      "error_name",
+                      "error_value",
+                      "traceback_last_lines",
+                      "label"
+                    ],
+                    "properties": {
+                      "cell_number": {
+                        "type": "integer"
+                      },
+                      "code_cell_number": {
+                        "type": "integer"
+                      },
+                      "cell_preview": {
+                        "type": "string"
+                      },
+                      "error_name": {
+                        "type": "string"
+                      },
+                      "error_value": {
+                        "type": "string"
+                      },
+                      "traceback_last_lines": {
+                        "type": "string"
+                      },
+                      "label": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                },
+                "changed_credentials": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

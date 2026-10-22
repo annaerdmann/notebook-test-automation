@@ -1,13 +1,14 @@
-"""Command line entry point: `wnqa run ...`."""
+"""Command line entry point: `notebook-test run ...`."""
 
 import sys
 
-USAGE = """usage: wnqa <command> [options]
+USAGE = """usage: notebook-test <command> [options]
 
 commands:
   run        execute notebooks and write a test report
   dashboard  build a dashboard page from run reports
   catalog    list notebooks to keep out of the catalog
+  relabel    label the errors of an existing report again with another profile
 """
 
 
@@ -23,6 +24,8 @@ def main(argv=None):
         from .publish import main_dashboard as run
     elif command == "catalog":
         from .publish import main_catalog as run
+    elif command == "relabel":
+        from .publish import main_relabel as run
     else:
         print(USAGE)
         return 2

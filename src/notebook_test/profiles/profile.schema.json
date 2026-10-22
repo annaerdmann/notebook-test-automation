@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "notebook-test profile",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "extends": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "default_label": {
+      "type": "string"
+    },
+    "rerun_on": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "classify_order": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "protect_files": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "labels": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "text"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "text": {
+            "type": "string"
+          },
+          "blocking": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    "classify": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "label"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "label": {
+              "type": "string"
+            },
+            "ename": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "ename_regex": {
+              "type": "string"
+            },
+            "evalue_regex": {
+              "type": "string"
+            },
+            "error_regex": {
+              "type": "string"
+            },
+            "text_regex": {
+              "type": "string"
+            },
+            "follow_on": {
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    },
+    "exclude": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "note": {
+          "type": "string"
+        }
+      }
+    },
+    "report": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "title": {
+          "type": "string"
+        },
+        "dashboard_title": {
+          "type": "string"
+        },
+        "error_types_note": {
+          "type": "string"
+        },
+        "protect_note": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

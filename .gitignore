@@ -1,0 +1,6 @@
+__pycache__/
+*.egg-info/
+notebook-test-work/
+wnqa-work/
+.pytest_cache/
+build/

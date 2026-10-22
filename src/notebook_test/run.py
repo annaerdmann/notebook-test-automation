@@ -1,22 +1,25 @@
-"""`wnqa run`: execute notebooks and write a test report (part B).
+"""`notebook-test run`: execute notebooks and write a test report.
 
 Based on the DEx team's AutoChecksV3.py (wekeo-dex, MIT): every cell runs with nbclient and the
-run continues after errors. Added: a config file for several repositories, error labels,
+run continues after errors. Added: a config file for several repositories, profile-driven error labels,
 follow-on detection, one rerun when a service was unavailable, and a combined report.
 
 Usage:
-    wnqa run CONFIG.yml [--workdir DIR] [--only REPO_NAME]
-    wnqa run --path FOLDER_OR_NOTEBOOK [--kernel NAME] [--workdir DIR]
+    notebook-test run CONFIG.yml [--workdir DIR] [--only REPO_NAME] [--profile NAME_OR_FILE]
+    notebook-test run --path FOLDER_OR_NOTEBOOK [--kernel NAME] [--workdir DIR] [--profile NAME_OR_FILE]
 
 Config file:
-    workdir: ./wnqa-work          # clones, executed notebooks and reports go here
+    profile: generic              # bundled profile name or YAML file (labels, protected files, report texts)
+    profile_overrides: {}         # merged over the profile
+    workdir: ./notebook-test-work # clones, executed notebooks and reports go here
     timeout: 1200                 # seconds per cell
     kernel: python3               # default kernel; "auto" uses the notebook's own kernelspec
     rerun_wait: 60                # seconds to wait before rerunning after a service error
     repos:
-      - url: https://github.com/wekeo/wekeo4data
+      - url: https://github.com/example/notebooks
         ref: main                 # optional
         kernel: auto              # optional, overrides the default
+        profile: wekeo            # optional, overrides the profile for this repository
         skip: ["**/draft_*.ipynb"]  # optional globs, relative to the repo
         environments: build       # optional: build a conda env per environment.yml (needs micromamba,
                                   # mamba or conda) and run the notebooks below it in that env
@@ -38,7 +41,8 @@ from jupyter_client.kernelspec import KernelSpecManager
 from nbclient import NotebookClient
 
 from .envs import build_env, env_files, kernel_for
-from .labels import FOLLOW_ON, LABEL_TEXT, NOTEBOOK, SERVICE, defined_names, label_error
+from .labels import KERNEL, Labeler, defined_names
+from .profiles import ProfileError, load_profile
 from .report import write_reports
 
 
@@ -50,7 +54,7 @@ class CellError:
     error_name: str
     error_value: str
     traceback_last_lines: str
-    label: str = NOTEBOOK
+    label: str = "notebook_error"
 
 
 @dataclass
@@ -101,7 +105,7 @@ def choose_kernel(nb, wanted, installed):
     return "python3"
 
 
-def execute(nb_path, kernel, timeout, out_dir):
+def execute(nb_path, kernel, timeout, out_dir, labeler):
     """Run one notebook top to bottom, keep going after errors, label every error."""
     nb = nbformat.read(nb_path, as_version=4)
     client = NotebookClient(nb, timeout=timeout, kernel_name=kernel,
@@ -125,16 +129,16 @@ def execute(nb_path, kernel, timeout, out_dir):
                 except Exception as e:  # timeout, dead kernel
                     cell_errs.append((type(e).__name__, str(e)[:500], str(e)[-2000:]))
                     if type(e).__name__ == "DeadKernelError":
-                        errors.append(CellError(i + 1, code_index, _preview(cell), *cell_errs[-1], label="kernel_died"))
+                        errors.append(CellError(i + 1, code_index, _preview(cell), *cell_errs[-1], label=KERNEL))
                         break
                 for ename, evalue, tb in cell_errs:
-                    label = label_error(ename, evalue, tb + "\n" + cell.source, failed_names)
+                    label = labeler.label_error(ename, evalue, tb + "\n" + cell.source, failed_names)
                     errors.append(CellError(i + 1, code_index, _preview(cell), ename, evalue,
                                             "\n".join(tb.splitlines()[-20:]), label))
                 if cell_errs:
                     failed_names |= defined_names(cell.source)
     except Exception as e:  # kernel could not start
-        errors.append(CellError(0, 0, "[kernel start]", type(e).__name__, str(e)[:500], str(e)[-2000:], "kernel_died"))
+        errors.append(CellError(0, 0, "[kernel start]", type(e).__name__, str(e)[:500], str(e)[-2000:], KERNEL))
     duration = time.perf_counter() - start
     out_dir.mkdir(parents=True, exist_ok=True)
     suffix = ".errored.ipynb" if errors else ".executed.ipynb"
@@ -143,14 +147,14 @@ def execute(nb_path, kernel, timeout, out_dir):
     return errors, duration, out_path
 
 
-def run_notebook(repo_name, repo_root, nb_path, kernel, timeout, out_dir, rerun_wait):
+def run_notebook(repo_name, repo_root, nb_path, kernel, timeout, out_dir, rerun_wait, labeler, protect_files):
     rel = os.path.relpath(nb_path, repo_root)
     print(f"▶ {repo_name}/{rel} (kernel {kernel})", flush=True)
-    snap, changed = snapshot_credentials(), set()
+    snap, changed = snapshot_credentials(protect_files), set()
 
     def attempt():
         try:
-            return execute(nb_path, kernel, timeout, out_dir)
+            return execute(nb_path, kernel, timeout, out_dir, labeler)
         finally:
             for f in restore_credentials(snap):
                 print(f"  notebook changed {f}; restored", flush=True)
@@ -158,7 +162,7 @@ def run_notebook(repo_name, repo_root, nb_path, kernel, timeout, out_dir, rerun_
 
     errors, duration, out_path = attempt()
     reran = False
-    if any(e.label == SERVICE for e in errors):
+    if any(e.label in labeler.profile.get("rerun_on", []) for e in errors):
         print(f"  service unavailable, rerunning after {rerun_wait}s", flush=True)
         time.sleep(rerun_wait)
         errors, duration, out_path = attempt()
@@ -167,7 +171,7 @@ def run_notebook(repo_name, repo_root, nb_path, kernel, timeout, out_dir, rerun_
     for e in errors:
         labels[e.label] = labels.get(e.label, 0) + 1
     status = "error" if errors else "ok"
-    summary = ", ".join(f"{n} {LABEL_TEXT[l]}" for l, n in labels.items()) or "ok"
+    summary = ", ".join(f"{n} {labeler.text(l)}" for l, n in labels.items()) or "ok"
     print(f"  {'✔' if status == 'ok' else '✖'} {duration:.0f}s – {summary}", flush=True)
     return NotebookRunResult(
         repo=repo_name, notebook=rel, status=status, duration_s=round(duration, 1), kernel=kernel,
@@ -208,13 +212,10 @@ def clone(url, ref, dest):
     return head
 
 
-# Credential files notebooks may overwrite, e.g. Credentials(username="<your_user_name>", ...).save().
-CREDENTIAL_FILES = ["~/.hdarc", "~/.cdsapirc", "~/.ecmwfdatastoresrc", "~/.netrc", "~/.eumdac/credentials"]
-
-
-def snapshot_credentials():
+def snapshot_credentials(files):
+    """Remember the profile's `protect_files`: notebooks may overwrite them, e.g. with placeholder credentials."""
     snap = {}
-    for f in CREDENTIAL_FILES:
+    for f in files:
         p = Path(f).expanduser()
         snap[p] = p.read_bytes() if p.is_file() else None
     return snap
@@ -236,7 +237,20 @@ def restore_credentials(snap):
     return changed
 
 
-def run_repo(entry, defaults, workdir):
+def repo_skips(root):
+    """`skip_notebooks` globs of the repository's own .github/notebook-qa.yml (shared with notebook-qa)."""
+    path = Path(root) / ".github" / "notebook-qa.yml"
+    if root.is_dir() and path.is_file():
+        return list((yaml.safe_load(path.read_text()) or {}).get("skip_notebooks") or [])
+    return []
+
+
+def profile_for(entry, defaults):
+    ref = entry.get("profile") or defaults.get("profile") or "generic"
+    return load_profile(ref, None if entry.get("profile") else defaults.get("profile_overrides"))
+
+
+def run_repo(entry, defaults, workdir, profile):
     url = entry.get("url")
     path = entry.get("path")
     name = entry.get("name") or Path(url or path).name.removesuffix(".git")
@@ -250,7 +264,8 @@ def run_repo(entry, defaults, workdir):
     timeout = int(entry.get("timeout", defaults.get("timeout", 1200)))
     wanted = entry.get("kernel", defaults.get("kernel", "auto"))
     rerun_wait = int(defaults.get("rerun_wait", 60))
-    notebooks = find_notebooks(root, entry.get("skip", [])) if root.is_dir() else [root]
+    labeler = Labeler(profile)
+    notebooks = find_notebooks(root, list(entry.get("skip", [])) + repo_skips(root)) if root.is_dir() else [root]
     env_logs, kernels_by_folder = {}, {}
     if entry.get("environments", defaults.get("environments")) == "build" and root.is_dir():
         # Only environments that serve a notebook in scope (skipped folders build nothing).
@@ -277,16 +292,18 @@ def run_repo(entry, defaults, workdir):
         built = kernel_for(nb_path, kernels_by_folder) if lang == "python" else None
         kernel = built or choose_kernel(nb, wanted, installed)
         out_dir = workdir / "outputs" / name / Path(os.path.relpath(nb_path.parent, root))
-        results.append(run_notebook(name, root, nb_path, kernel, timeout, out_dir, rerun_wait))
-    return {"repo": name, "url": url, "commit": commit, "environments": env_logs, "results": results}
+        results.append(run_notebook(name, root, nb_path, kernel, timeout, out_dir, rerun_wait, labeler,
+                                    profile.get("protect_files", [])))
+    return {"repo": name, "profile": profile["name"], "url": url, "commit": commit, "environments": env_logs, "results": results}
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(prog="wnqa run", description="Execute notebooks and write a test report.")
+    ap = argparse.ArgumentParser(prog="notebook-test run", description="Execute notebooks and write a test report.")
     ap.add_argument("config", nargs="?", help="config YAML (see module docstring)")
     ap.add_argument("--path", help="run notebooks in this local folder or file instead of a config")
     ap.add_argument("--kernel", default=None, help="kernel name, or 'auto' (default)")
-    ap.add_argument("--workdir", default=None, help="work folder (default from config, else ./wnqa-work)")
+    ap.add_argument("--workdir", default=None, help="work folder (default from config, else ./notebook-test-work)")
+    ap.add_argument("--profile", default=None, help="bundled profile name or YAML file (overrides the config)")
     ap.add_argument("--only", action="append", help="only run the repo with this name (repeatable)")
     a = ap.parse_args(argv)
 
@@ -298,20 +315,28 @@ def main(argv=None):
         ap.error("give a config file or --path")
     if a.kernel:
         cfg["kernel"] = a.kernel
-    workdir = Path(a.workdir or cfg.get("workdir") or "wnqa-work").expanduser().resolve()
+    if a.profile:
+        cfg["profile"] = a.profile
+    workdir = Path(a.workdir or cfg.get("workdir") or "notebook-test-work").expanduser().resolve()
     workdir.mkdir(parents=True, exist_ok=True)
 
     started = time.strftime("%Y-%m-%dT%H:%M:%S")
+    try:
+        default_profile = load_profile(cfg.get("profile") or "generic", cfg.get("profile_overrides"))
+        profiles = {id(e): profile_for(e, cfg) for e in cfg.get("repos", [])}
+    except ProfileError as e:
+        print(f"notebook-test: {e}", file=sys.stderr)
+        return 2
     repos = []
     for entry in cfg.get("repos", []):
         name = entry.get("name") or Path(entry.get("url") or entry.get("path")).name.removesuffix(".git")
         if a.only and name not in a.only:
             continue
-        repos.append(run_repo(entry, cfg, workdir))
+        repos.append(run_repo(entry, cfg, workdir, profiles[id(entry)]))
 
     run = {"started_at": started, "finished_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
            "host": os.uname().nodename, "repos": repos}
-    paths = write_reports(run, workdir / "reports")
+    paths = write_reports(run, workdir / "reports", [default_profile] + list(profiles.values()))
     print(f"\nReports: {', '.join(str(p) for p in paths)}")
     failed = sum(r.status == "error" for repo in repos for r in repo["results"])
     return 1 if failed else 0

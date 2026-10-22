@@ -3,9 +3,9 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "wekeo-notebook-qa"
-version = "0.1.0"
-description = "Static checks and execution tests for WEkEO Jupyter notebooks"
+name = "notebook-test-automation"
+version = "1.0.0"
+description = "Run Jupyter notebooks, label the errors and report the results, configured by profiles"
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.10"
@@ -13,13 +13,17 @@ dependencies = [
     "nbformat>=5.9",
     "nbclient>=0.10",
     "pyyaml>=6",
+    "jsonschema>=4",
 ]
 
 [project.optional-dependencies]
 test = ["pytest>=8", "ipykernel>=6"]
 
 [project.scripts]
-wnqa = "wnqa.__main__:main"
+notebook-test = "notebook_test.__main__:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+notebook_test = ["profiles/*.yml", "profiles/*.json", "*.json"]

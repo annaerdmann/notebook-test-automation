@@ -40,7 +40,7 @@ def build_env(env_file, workdir, label):
     if not exe:
         return None, "No micromamba, mamba or conda found; cannot build environments."
     prefix = Path(workdir) / "envs" / _safe(label)
-    kernel = f"wnqa-{_safe(label)}"
+    kernel = f"notebook-test-{_safe(label)}"
     env = dict(os.environ)
     if tool == "micromamba":
         env.setdefault("MAMBA_ROOT_PREFIX", str(Path(workdir) / "micromamba"))

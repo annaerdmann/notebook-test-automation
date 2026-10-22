@@ -1,12 +1,15 @@
-"""`wnqa dashboard` and `wnqa catalog`: turn run reports into a dashboard page and a catalog exclude list.
+"""`notebook-test dashboard`, `catalog` and `relabel`: turn run reports into a dashboard page and a catalog exclude list.
 
 Usage:
-    wnqa dashboard REPORT.json [REPORT.json ...] --out dashboard.html
-    wnqa catalog REPORT.json --out catalog_exclude.json
+    notebook-test dashboard REPORT.json [REPORT.json ...] --out dashboard.html
+    notebook-test catalog REPORT.json --out catalog_exclude.json [--profile NAME_OR_FILE]
+    notebook-test relabel REPORT.json --profile NAME_OR_FILE --out NEW.json
 
 The dashboard shows the newest report in detail and the pass rate of every report given, so a
 folder of quarterly reports becomes a history. The catalog list names notebooks that failed for
-reasons the author has to fix; service outages and test-account credential problems do not count.
+reasons the author has to fix (labels the profile marks `blocking`); service outages and
+test-account credential problems do not count. Reports carry their labels; reports from before
+schema_version 1 need `--profile`.
 """
 
 import argparse
@@ -15,19 +18,29 @@ import json
 import sys
 from pathlib import Path
 
-from .labels import FOLLOW_ON, KERNEL, LABEL_TEXT, NOTEBOOK, PACKAGE, TIMEOUT
+from .labels import FOLLOW_ON, Labeler
+from .profiles import ProfileError, load_profile
+from .report import SCHEMA_VERSION, report_context, to_markdown
 
-# Labels that make a notebook unfit for the catalog.
-BLOCKING = {NOTEBOOK, PACKAGE, TIMEOUT, KERNEL}
 
-
-def _load(paths):
+def _load(paths, profile=None):
+    """Read reports. A report without labels (older format) gets them from `profile`."""
     reports = [json.loads(Path(p).read_text()) for p in paths]
+    for r in reports:
+        if "labels" not in r:
+            p = load_profile(profile or "generic")
+            r.update({k: v for k, v in report_context([p]).items() if k != "profile"})
+            r["profile"] = p["name"]
     return sorted(reports, key=lambda r: r["started_at"])
 
 
-def _blocking(result):
-    return sorted({e["label"] for e in result["cell_errors"] if e["label"] in BLOCKING})
+def _text(report, label):
+    return report["labels"].get(label, {}).get("text", label)
+
+
+def _blocking(report, result):
+    blocking = {k for k, v in report["labels"].items() if v.get("blocking")}
+    return sorted({e["label"] for e in result["cell_errors"] if e["label"] in blocking})
 
 
 def _github_link(repo, notebook):
@@ -41,13 +54,13 @@ def catalog_list(report):
     out = []
     for repo in report["repos"]:
         for r in repo["results"]:
-            reasons = _blocking(r)
+            reasons = _blocking(report, r)
             if reasons:
                 out.append({"repo": repo["repo"], "notebook": r["notebook"],
                             "link": _github_link(repo, r["notebook"]),
-                            "reasons": [LABEL_TEXT[x] for x in reasons]})
+                            "reasons": [_text(report, x) for x in reasons]})
     return {"generated_from": report["started_at"], "host": report.get("host"),
-            "note": "Notebooks that failed for reasons the author has to fix. Only valid if the run was on the WEkEO JupyterHub.",
+            "note": report["texts"]["exclude_note"],
             "exclude": out}
 
 
@@ -64,14 +77,15 @@ def dashboard_html(reports):
                 if k != FOLLOW_ON:
                     labels[k] = labels.get(k, 0) + v
         pct = round(100 * passed / len(res)) if res else 0
-        chips = " ".join(f'<span class="chip {k}">{v} {e(LABEL_TEXT[k])}</span>' for k, v in sorted(labels.items()))
+        blocking = {k for k, v in latest["labels"].items() if v.get("blocking")}
+        chips = " ".join(f'<span class="chip {k}{" blocking" if k in blocking else ""}">{v} {e(_text(latest, k))}</span>' for k, v in sorted(labels.items()))
         rows.append(f"<tr><td>{e(repo['repo'])}</td><td class=num>{len(res)}</td><td class=num>{passed}</td>"
                     f"<td><div class=bar><span style='width:{pct}%'></span></div> {pct}%</td><td>{chips}</td></tr>")
         nb_rows = []
         for r in res:
             link = _github_link(repo, r["notebook"])
             name = f'<a href="{e(link)}">{e(r["notebook"])}</a>' if link else e(r["notebook"])
-            kinds = ", ".join(f"{v} {LABEL_TEXT[k]}" for k, v in sorted(r["labels"].items()) if k != FOLLOW_ON)
+            kinds = ", ".join(f"{v} {_text(latest, k)}" for k, v in sorted(r["labels"].items()) if k != FOLLOW_ON)
             first = next((c for c in r["cell_errors"] if c["label"] != FOLLOW_ON), None)
             msg = e(f"cell {first['cell_number']}: {first['error_name']}: {first['error_value']}"[:160]) if first else ""
             nb_rows.append(f"<tr><td>{name}</td><td class='st {r['status']}'>{'pass' if r['status'] == 'ok' else 'fail'}</td>"
@@ -85,7 +99,7 @@ def dashboard_html(reports):
         history.append(f"<tr><td>{e(rep['started_at'][:10])}</td><td>{e(rep.get('host', ''))}</td>"
                        f"<td class=num>{len(res)}</td><td class=num>{ok}</td></tr>")
     return f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1"><title>Notebook Test Dashboard</title>
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>{e(latest['texts']['dashboard_title'])}</title>
 <style>
 :root{{--bg:#fff;--fg:#1c2430;--muted:#5b6675;--line:#e3e7ec;--ok:#1f7a4d;--bad:#b42318;--accent:#1a4696}}
 @media (prefers-color-scheme:dark){{:root{{--bg:#12161c;--fg:#e6e9ee;--muted:#9aa4b2;--line:#2a313b;--ok:#4cc38a;--bad:#f2766b;--accent:#7aa2ff}}}}
@@ -96,12 +110,12 @@ th{{color:var(--muted);font-weight:600;font-size:13px}} .num{{text-align:right}}
 .bar{{display:inline-block;width:90px;height:8px;background:var(--line);border-radius:4px;vertical-align:middle}}
 .bar span{{display:block;height:8px;background:var(--ok);border-radius:4px}}
 .chip{{display:inline-block;font-size:12px;border:1px solid var(--line);border-radius:10px;padding:0 8px;margin:1px}}
-.chip.notebook_error,.chip.missing_package{{border-color:var(--bad)}}
+.chip.blocking{{border-color:var(--bad)}}
 .st.ok{{color:var(--ok)}} .st.error{{color:var(--bad)}} a{{color:var(--accent)}}
 details{{border:1px solid var(--line);border-radius:8px;padding:6px 12px;margin:8px 0}} summary{{cursor:pointer;font-weight:600}}
 .wrap{{overflow-x:auto}}
 </style></head><body>
-<h1>Notebook test dashboard</h1>
+<h1>{e(latest['texts']['dashboard_title'])}</h1>
 <p class=sub>Latest run {e(latest['started_at'])} on {e(latest.get('host', ''))}. Follow-on errors are not counted.</p>
 <div class=wrap><table><tr><th>Repository</th><th class=num>Notebooks</th><th class=num>Passed</th><th>Pass rate</th><th>Errors by type</th></tr>{''.join(rows)}</table></div>
 <h2>Notebooks</h2><div class=wrap>{''.join(details)}</div>
@@ -110,23 +124,64 @@ details{{border:1px solid var(--line);border-radius:8px;padding:6px 12px;margin:
 
 
 def main_dashboard(argv=None):
-    ap = argparse.ArgumentParser(prog="wnqa dashboard")
+    ap = argparse.ArgumentParser(prog="notebook-test dashboard")
     ap.add_argument("reports", nargs="+")
+    ap.add_argument("--profile", help="profile for reports without labels (older format)")
     ap.add_argument("--out", default="dashboard.html")
     a = ap.parse_args(argv)
-    Path(a.out).write_text(dashboard_html(_load(a.reports)))
+    Path(a.out).write_text(dashboard_html(_load(a.reports, a.profile)))
     print(f"Dashboard: {a.out}")
     return 0
 
 
 def main_catalog(argv=None):
-    ap = argparse.ArgumentParser(prog="wnqa catalog")
+    ap = argparse.ArgumentParser(prog="notebook-test catalog")
     ap.add_argument("report")
+    ap.add_argument("--profile", help="profile for a report without labels (older format)")
     ap.add_argument("--out", default="catalog_exclude.json")
     a = ap.parse_args(argv)
-    data = catalog_list(_load([a.report])[-1])
+    data = catalog_list(_load([a.report], a.profile)[-1])
     Path(a.out).write_text(json.dumps(data, indent=2))
     print(f"{len(data['exclude'])} notebook(s) to keep out of the catalog: {a.out}")
+    return 0
+
+
+def relabel(report, profile):
+    """Label the errors of an existing report again with another profile (for example after a rule change).
+
+    follow-on labels are kept, because they depend on the cell source, which the report does not hold.
+    """
+    labeler = Labeler(profile)
+    out = json.loads(json.dumps(report))
+    for repo in out["repos"]:
+        repo["profile"] = profile["name"]
+        for r in repo["results"]:
+            for e in r["cell_errors"]:
+                if e["label"] != FOLLOW_ON:
+                    e["label"] = labeler.label_error(e["error_name"], e["error_value"],
+                                                     e["traceback_last_lines"] + "\n" + e["cell_preview"], set())
+            r["labels"] = {}
+            for e in r["cell_errors"]:
+                r["labels"][e["label"]] = r["labels"].get(e["label"], 0) + 1
+    out.update(report_context([profile]))
+    return out
+
+
+def main_relabel(argv=None):
+    ap = argparse.ArgumentParser(prog="notebook-test relabel", description=relabel.__doc__)
+    ap.add_argument("report")
+    ap.add_argument("--profile", required=True)
+    ap.add_argument("--out", required=True)
+    a = ap.parse_args(argv)
+    try:
+        profile = load_profile(a.profile)
+    except ProfileError as e:
+        print(f"notebook-test: {e}", file=sys.stderr)
+        return 2
+    data = relabel(json.loads(Path(a.report).read_text()), profile)
+    Path(a.out).write_text(json.dumps(data, indent=2))
+    Path(a.out).with_suffix(".md").write_text(to_markdown(data))
+    print(f"Relabelled report: {a.out}")
     return 0
 
 

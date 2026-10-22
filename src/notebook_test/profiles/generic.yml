@@ -1,0 +1,65 @@
+# Platform-neutral defaults. Every other profile extends this one.
+# Rules in `classify` are tried stage by stage in `classify_order`; inside a stage top to bottom; the first
+# rule whose conditions all hold gives the label. A rule has `label` and any of:
+#   ename: [names]          exact exception class names
+#   ename_regex / evalue_regex   regex on the exception class / message
+#   error_regex             regex on "<ename>: <evalue>"
+#   text_regex              regex on the full traceback plus the cell source
+#   follow_on: true         NameError for a name that an earlier failed cell should have defined
+# Add rules to a stage in a child profile with a `+` key: `classify: {platform+: [...]}`.
+name: generic
+description: Labels and report texts for any notebook collection.
+
+labels:
+  notebook_error:      {text: notebook error, blocking: true}
+  follow_on:           {text: follow-on error, blocking: false}
+  missing_package:     {text: missing package, blocking: true}
+  credentials:         {text: credentials, blocking: false}
+  service_unavailable: {text: service unavailable, blocking: false}
+  quota_exceeded:      {text: quota exceeded, blocking: false}
+  platform:            {text: needs platform service, blocking: false}
+  timeout:             {text: timeout, blocking: true}
+  kernel_died:         {text: kernel died, blocking: true}
+
+default_label: notebook_error
+rerun_on: [service_unavailable]      # a notebook with one of these labels is run once more
+
+classify_order: [timeout, kernel_died, follow_on, missing_package, platform, auth, quota, service, credentials, timeout_fallback]
+classify:
+  timeout:
+    - {label: timeout, ename: [CellTimeoutError, TimeoutError], text_regex: 'Cell execution'}
+  kernel_died:
+    - {label: kernel_died, ename: [DeadKernelError]}
+  follow_on:
+    - {label: follow_on, follow_on: true}
+  missing_package:
+    - {label: missing_package, ename: [ModuleNotFoundError, ImportError]}
+    - {label: missing_package, text_regex: 'No module named'}
+  platform: []
+  auth:
+    - {label: credentials, error_regex: '(?i)/(oauth2?/)?token\b|/login\b'}
+  quota:
+    - {label: quota_exceeded, ename_regex: 'QuotaExceeded'}
+  service:
+    - label: service_unavailable
+      error_regex: '(?i)\b(50[0234])\b|Service Unavailable|Bad Gateway|Gateway Time-?out|ConnectionError|ConnectTimeout|ReadTimeout|ClientConnectorError|ServerDisconnectedError|Temporary failure in name resolution|Max retries exceeded|Connection (refused|reset|aborted)|RemoteDisconnected'
+  credentials:
+    - label: credentials
+      error_regex: '(?i)\b40[13]\b|Unauthori[sz]ed|Forbidden|invalid (user|credentials|token)|credential|authenticat|StdinNotImplementedError|raw_input was called|getpass|access_token'
+  timeout_fallback:
+    - {label: timeout, ename: [CellTimeoutError]}
+
+# Credential files that notebooks must not overwrite. They are restored after every notebook.
+protect_files: [~/.netrc]
+
+exclude:
+  note: Notebooks that failed for reasons the author has to fix.
+
+report:
+  title: Notebook test report
+  dashboard_title: Notebook test dashboard
+  error_types_note: >-
+    Error types: *notebook error* needs the author; *follow-on error* was caused by an earlier failed cell;
+    *missing package*, *credentials*, *service unavailable*, *quota exceeded* and *needs platform service*
+    usually point to the environment, the test account or the platform.
+  protect_note: notebook-test restored the files after each notebook. The notebook should not overwrite existing credentials.
