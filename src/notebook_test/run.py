@@ -7,6 +7,13 @@ follow-on detection, one rerun when a service was unavailable, and a combined re
 Usage:
     notebook-test run CONFIG.yml [--workdir DIR] [--only REPO_NAME] [--profile NAME_OR_FILE]
     notebook-test run --path FOLDER_OR_NOTEBOOK [--kernel NAME] [--workdir DIR] [--profile NAME_OR_FILE]
+    Both take --report-name NAME. Reports are never overwritten: a second run on the same day gets
+    the start time added to its file name.
+
+Rerunning single notebooks: environments built in a work folder are remembered there
+(envs/kernels.json). A later run with the same --workdir, also with --path on one notebook, uses the
+environment of the nearest environment file above the notebook again, and updates it first if that
+file has changed since.
 
 Config file:
     profile: generic              # bundled profile name or YAML file (labels, protected files, report texts)
@@ -23,6 +30,7 @@ Config file:
         skip: ["**/draft_*.ipynb"]  # optional globs, relative to the repo
         environments: build       # optional: build a conda env per environment.yml (needs micromamba,
                                   # mamba or conda) and run the notebooks below it in that env
+                                  # (only for folders with notebooks in scope)
 """
 
 import argparse
@@ -40,7 +48,7 @@ import yaml
 from jupyter_client.kernelspec import KernelSpecManager
 from nbclient import NotebookClient
 
-from .envs import build_env, env_files, kernel_for
+from .envs import build_env, file_hash, load_built, nearest_env_file, save_built, use_kernels
 from .labels import KERNEL, Labeler, defined_names
 from .profiles import ProfileError, load_profile
 from .report import write_reports
@@ -183,6 +191,15 @@ def run_notebook(repo_name, repo_root, nb_path, kernel, timeout, out_dir, rerun_
     )
 
 
+def git_root(path):
+    """The repository a notebook file belongs to (nearest folder with .git), else its own folder."""
+    path = Path(path).resolve()
+    for folder in path.parents:
+        if (folder / ".git").exists():
+            return folder
+    return path.parent
+
+
 def find_notebooks(root, skip=()):
     out = []
     for p in sorted(root.rglob("*.ipynb")):
@@ -266,21 +283,38 @@ def run_repo(entry, defaults, workdir, profile):
     rerun_wait = int(defaults.get("rerun_wait", 60))
     labeler = Labeler(profile)
     notebooks = find_notebooks(root, list(entry.get("skip", [])) + repo_skips(root)) if root.is_dir() else [root]
-    env_logs, kernels_by_folder = {}, {}
-    if entry.get("environments", defaults.get("environments")) == "build" and root.is_dir():
-        # Only environments that serve a notebook in scope (skipped folders build nothing).
-        nb_dirs = [nb.parent.resolve() for nb in notebooks]
-        for env_file in env_files(root):
-            env_dir = env_file.parent.resolve()
-            if not any(d == env_dir or env_dir in d.parents for d in nb_dirs):
-                continue
-            label = f"{name}-{os.path.relpath(env_file.parent, root)}".rstrip("-.")
-            print(f"  building environment {os.path.relpath(env_file, root)}", flush=True)
+    build = entry.get("environments", defaults.get("environments")) == "build"
+    repo_root = root if root.is_dir() else git_root(root)
+    built = load_built(workdir)
+    if built:
+        use_kernels(workdir)
+    env_logs, kernel_by_env = {}, {}
+
+    def env_kernel(env_file):
+        """Kernel for an environment file. An environment built earlier in this work folder is reused
+        while the file is unchanged, and updated when the file changed. New ones are built only with
+        `environments: build`."""
+        key = str(env_file.resolve())
+        if key in kernel_by_env:
+            return kernel_by_env[key]
+        rec = built.get(key)
+        kernel = None
+        if rec and rec.get("sha256") == file_hash(env_file):
+            kernel = rec["kernel"]
+        elif rec or build:
+            rel = os.path.relpath(env_file, repo_root)
+            label = (rec or {}).get("label") or f"{name}-{os.path.relpath(env_file.parent, repo_root)}".rstrip("-.")
+            print(f"  {'updating' if rec else 'building'} environment {rel}", flush=True)
             kernel, log = build_env(env_file, workdir, label)
-            kernels_by_folder[str(env_file.parent)] = kernel
-            env_logs[os.path.relpath(env_file, root)] = {"kernel": kernel, "ok": bool(kernel), "log": log[-4000:]}
-            if not kernel:
+            env_logs[rel] = {"kernel": kernel, "ok": bool(kernel), "log": log[-4000:]}
+            if kernel:
+                save_built(workdir, env_file, kernel, label)
+                built[key] = {"kernel": kernel, "label": label}
+            else:
                 print("  environment build failed; notebooks there use the default kernel", flush=True)
+        kernel_by_env[key] = kernel
+        return kernel
+
     installed = _installed_kernels()
     if not root.is_dir():
         root = root.parent
@@ -289,8 +323,11 @@ def run_repo(entry, defaults, workdir, profile):
     for nb_path in notebooks:
         nb = nbformat.read(nb_path, as_version=4)
         lang = ((nb.metadata.get("kernelspec") or {}).get("language") or "python").lower()
-        built = kernel_for(nb_path, kernels_by_folder) if lang == "python" else None
-        kernel = built or choose_kernel(nb, wanted, installed)
+        env_file = nearest_env_file(nb_path, repo_root) if lang == "python" else None
+        own = env_kernel(env_file) if env_file else None
+        if own and own not in installed:
+            installed = _installed_kernels()
+        kernel = own or choose_kernel(nb, wanted, installed)
         out_dir = workdir / "outputs" / name / Path(os.path.relpath(nb_path.parent, root))
         results.append(run_notebook(name, root, nb_path, kernel, timeout, out_dir, rerun_wait, labeler,
                                     profile.get("protect_files", [])))
@@ -305,6 +342,8 @@ def main(argv=None):
     ap.add_argument("--workdir", default=None, help="work folder (default from config, else ./notebook-test-work)")
     ap.add_argument("--profile", default=None, help="bundled profile name or YAML file (overrides the config)")
     ap.add_argument("--only", action="append", help="only run the repo with this name (repeatable)")
+    ap.add_argument("--report-name", default=None,
+                    help="file name (without extension) for the report; a number is added if it exists")
     a = ap.parse_args(argv)
 
     if a.config:
@@ -336,7 +375,7 @@ def main(argv=None):
 
     run = {"started_at": started, "finished_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
            "host": os.uname().nodename, "repos": repos}
-    paths = write_reports(run, workdir / "reports", [default_profile] + list(profiles.values()))
+    paths = write_reports(run, workdir / "reports", [default_profile] + list(profiles.values()), a.report_name)
     print(f"\nReports: {', '.join(str(p) for p in paths)}")
     failed = sum(r.status == "error" for repo in repos for r in repo["results"])
     return 1 if failed else 0

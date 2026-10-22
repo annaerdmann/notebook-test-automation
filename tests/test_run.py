@@ -145,3 +145,49 @@ def test_protected_files_are_restored_and_come_from_the_profile(tmp_path, monkey
     (home / ".netrc").write_text("machine x\n")
     main(["--path", str(tmp_path / "save.ipynb"), "--workdir", str(tmp_path / "work2"), "--kernel", "python3"])
     assert (home / ".hdarc").read_text() == "user: <your_user_name>\n"
+
+
+def test_reports_are_not_overwritten(tmp_path):
+    nb = new_notebook(cells=[new_code_cell("1 + 1")], metadata={"kernelspec": KERNELSPEC})
+    nbformat.write(nb, tmp_path / "a.ipynb")
+    args = ["--path", str(tmp_path / "a.ipynb"), "--workdir", str(tmp_path / "work"), "--kernel", "python3"]
+    main(args)
+    main(args)
+    main(args + ["--report-name", "rerun"])
+    main(args + ["--report-name", "rerun"])
+    names = sorted(p.name for p in (tmp_path / "work" / "reports").glob("*.json"))
+    assert len(names) == 4
+    assert "rerun.json" in names and "rerun_2.json" in names
+
+
+def test_single_notebook_rerun_reuses_and_updates_the_built_environment(tmp_path, monkeypatch):
+    from notebook_test import run as run_module
+    repo = tmp_path / "repo"
+    (repo / ".git").mkdir(parents=True)
+    (repo / "sub").mkdir()
+    env = repo / "environment.yml"
+    env.write_text("dependencies: [python]\n")
+    nb = new_notebook(cells=[new_code_cell("1 + 1")], metadata={"kernelspec": KERNELSPEC})
+    nbformat.write(nb, repo / "sub" / "a.ipynb")
+    builds = []
+
+    def fake_build(env_file, workdir, label):
+        builds.append(label)
+        return "python3", "built"
+
+    monkeypatch.setattr(run_module, "build_env", fake_build)
+    work = str(tmp_path / "work")
+    cfg = tmp_path / "config.yml"
+    cfg.write_text(f"workdir: {work}\nrepos:\n  - path: {repo}\n    name: repo\n    environments: build\n")
+    run_module.main([str(cfg)])
+    assert builds == ["repo"]
+    # Rerun one notebook with --path: same environment, nothing rebuilt.
+    run_module.main(["--path", str(repo / "sub" / "a.ipynb"), "--workdir", work])
+    assert builds == ["repo"]
+    # The environment file changed (an allowed fix): the rerun updates the same environment.
+    env.write_text("dependencies: [python, numpy]\n")
+    run_module.main(["--path", str(repo / "sub" / "a.ipynb"), "--workdir", work])
+    assert builds == ["repo", "repo"]
+    reports = sorted((tmp_path / "work" / "reports").glob("*.json"))
+    last = json.loads(reports[-1].read_text())
+    assert last["repos"][0]["results"][0]["kernel"] == "python3"

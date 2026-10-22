@@ -90,13 +90,21 @@ def to_markdown(run):
     return "\n".join(lines)
 
 
-def write_reports(run, out_dir, profiles):
+def write_reports(run, out_dir, profiles, name=None):
+    """Write the JSON and Markdown report. Never overwrites: a second run on the same day gets the
+    start time added to its name, and an explicit `name` gets a number added if it is taken."""
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     data = _plain({**report_context(profiles), **run})
-    stamp = data["started_at"][:10]
-    json_path = out_dir / f"notebook_test_report_{stamp}.json"
-    md_path = out_dir / f"notebook_test_report_{stamp}.md"
+    if name:
+        stems = [name] + [f"{name}_{i}" for i in range(2, 1000)]
+    else:
+        day, clock = data["started_at"][:10], data["started_at"][11:19].replace(":", "")
+        stems = [f"notebook_test_report_{day}", f"notebook_test_report_{day}_{clock}"]
+        stems += [f"notebook_test_report_{day}_{clock}_{i}" for i in range(2, 1000)]
+    stem = next(s for s in stems if not (out_dir / f"{s}.json").exists() and not (out_dir / f"{s}.md").exists())
+    json_path = out_dir / f"{stem}.json"
+    md_path = out_dir / f"{stem}.md"
     json_path.write_text(json.dumps(data, indent=2))
     md_path.write_text(to_markdown(data))
     return [json_path, md_path]

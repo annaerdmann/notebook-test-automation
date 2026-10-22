@@ -39,6 +39,16 @@ repos:
 
 A repository's own `skip_notebooks` globs in `.github/notebook-qa.yml` (shared with notebook-qa) are honoured too. Submodules are cloned. Reports go to `<workdir>/reports/`, executed notebooks to `<workdir>/outputs/`. Executed notebooks can contain outputs from your account, so do not publish them. Remove the work folder to clean up everything, environments included.
 
+Reports are never overwritten: a second run on the same day gets its start time added to the file name (`notebook_test_report_2026-10-22_143005.json`), or name it yourself with `--report-name`.
+
+To rerun one notebook after a change, use the same work folder:
+
+```bash
+notebook-test run --path notebook-test-work/repos/notebooks/folder/example.ipynb --workdir notebook-test-work --report-name rerun-example-1
+```
+
+Environments built in a work folder are remembered there (`envs/kernels.json`), so the rerun uses the same environment as the full run. If the environment file changed since, the environment is updated first.
+
 Protected files (`protect_files` in the profile) are restored after every notebook, because some notebooks save placeholder credentials over them; the report lists those notebooks.
 
 ```bash

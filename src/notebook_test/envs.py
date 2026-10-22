@@ -5,6 +5,8 @@ environment from each environment file, installed ipykernel and registered a ker
 environments live under the work folder, so removing the work folder removes everything.
 """
 
+import hashlib
+import json
 import os
 import re
 import shutil
@@ -18,16 +20,6 @@ def find_solver():
         if path:
             return tool, path
     return None, None
-
-
-def env_files(root):
-    """environment.yml/yaml files in the repo, nearest first per folder (skips hidden folders)."""
-    found = []
-    for name in ("environment.yml", "environment.yaml"):
-        for p in Path(root).rglob(name):
-            if not any(part.startswith(".") for part in p.relative_to(root).parts[:-1]):
-                found.append(p)
-    return sorted(found)
 
 
 def _safe(name):
@@ -67,20 +59,51 @@ def build_env(env_file, workdir, label):
     log.append(r.stdout + r.stderr)
     if r.returncode != 0:
         return None, "\n".join(log)
-    # Make the kernel visible to this process (JUPYTER_PATH is read on each kernelspec lookup).
-    data_dir = str(kernels_dir / "share" / "jupyter")
-    paths = os.environ.get("JUPYTER_PATH", "").split(os.pathsep) if os.environ.get("JUPYTER_PATH") else []
-    if data_dir not in paths:
-        os.environ["JUPYTER_PATH"] = os.pathsep.join([data_dir] + paths)
+    use_kernels(workdir)
     return kernel, "\n".join(log)
 
 
-def kernel_for(nb_path, kernels_by_folder):
-    """The kernel built for the nearest folder above the notebook that has an environment file."""
-    folder = Path(nb_path).parent.resolve()
-    best, best_len = None, -1
-    for env_folder, kernel in kernels_by_folder.items():
-        env_folder = Path(env_folder).resolve()
-        if kernel and (folder == env_folder or env_folder in folder.parents) and len(env_folder.parts) > best_len:
-            best, best_len = kernel, len(env_folder.parts)
-    return best
+def use_kernels(workdir):
+    """Make kernels built in this work folder visible to this process (JUPYTER_PATH is read on each
+    kernelspec lookup)."""
+    data_dir = str(Path(workdir) / "jupyter" / "share" / "jupyter")
+    paths = os.environ.get("JUPYTER_PATH", "").split(os.pathsep) if os.environ.get("JUPYTER_PATH") else []
+    if data_dir not in paths:
+        os.environ["JUPYTER_PATH"] = os.pathsep.join([data_dir] + paths)
+
+
+def file_hash(path):
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def _registry(workdir):
+    return Path(workdir) / "envs" / "kernels.json"
+
+
+def load_built(workdir):
+    """Environments built earlier in this work folder: {environment file: {kernel, label, sha256}}."""
+    try:
+        return json.loads(_registry(workdir).read_text())
+    except (OSError, ValueError):
+        return {}
+
+
+def save_built(workdir, env_file, kernel, label):
+    built = load_built(workdir)
+    built[str(Path(env_file).resolve())] = {"kernel": kernel, "label": label, "sha256": file_hash(env_file)}
+    _registry(workdir).parent.mkdir(parents=True, exist_ok=True)
+    _registry(workdir).write_text(json.dumps(built, indent=2))
+
+
+def nearest_env_file(nb_path, root):
+    """The environment file in the notebook's folder or the nearest folder above it, up to `root`."""
+    root = Path(root).resolve()
+    folder = Path(nb_path).resolve().parent
+    while True:
+        for name in ("environment.yml", "environment.yaml"):
+            if (folder / name).is_file():
+                return folder / name
+        if folder == root or root not in folder.parents:
+            return None
+        folder = folder.parent
+
