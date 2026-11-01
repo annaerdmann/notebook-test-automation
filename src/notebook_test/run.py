@@ -291,6 +291,7 @@ def run_repo(entry, defaults, workdir, profile):
     labeler = Labeler(profile)
     notebooks = find_notebooks(root, list(entry.get("skip", [])) + repo_skips(root)) if root.is_dir() else [root]
     build = entry.get("environments", defaults.get("environments")) == "build"
+    platform = detect_platform(defaults.get("platform"))
     repo_root = root if root.is_dir() else git_root(root)
     built = load_built(workdir)
     if built:
@@ -335,7 +336,7 @@ def run_repo(entry, defaults, workdir, profile):
         if own and own not in installed:
             installed = _installed_kernels()
         kernel = own or choose_kernel(nb, wanted, installed)
-        env = {"env_source": "built" if own else ("fallback" if env_file else "platform-kernel"),
+        env = {"env_source": "built" if own else ("fallback" if env_file and platform == "local" else "platform-kernel"),
                "env_file": os.path.relpath(env_file, repo_root) if env_file else None,
                "env_sha256": file_hash(env_file) if env_file else None}
         out_dir = workdir / "outputs" / name / Path(os.path.relpath(nb_path.parent, root))

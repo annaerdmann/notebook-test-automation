@@ -116,7 +116,7 @@ repos[]         repo, profile, url, commit, environments, results[]
                 executed_path / errored_path, error_message, reran, labels {id: count},
                 changed_credentials[], cell_errors[],
                 notebook_id (<repo url>/<notebook path>, lower-case host and owner, the same on every platform),
-                env_source ("built", "platform-kernel" or "fallback"), env_file (path in the repo or null),
+                env_source ("built"; "platform-kernel" when the notebook ran in the platform's own kernel; "fallback" when a local run found an environment file but ran in the default kernel), env_file (path in the repo or null),
                 env_sha256 (or null)
     cell_errors[]  cell_number, code_cell_number, cell_preview, error_name, error_value,
                    traceback_last_lines, label
