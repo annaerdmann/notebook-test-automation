@@ -20,6 +20,7 @@ Config file:
     profile_overrides: {}         # merged over the profile
     workdir: ./notebook-test-work # clones, executed notebooks and reports go here
     timeout: 1200                 # seconds per cell
+    platform: local               # "local" or "wekeo-jupyterhub"; default: the JupyterHub if JUPYTERHUB_API_URL is set
     kernel: python3               # default kernel; "auto" uses the notebook's own kernelspec
     rerun_wait: 60                # seconds to wait before rerunning after a service error
     repos:
@@ -51,7 +52,7 @@ from nbclient import NotebookClient
 from .envs import build_env, file_hash, load_built, nearest_env_file, save_built, use_kernels
 from .labels import KERNEL, Labeler, defined_names
 from .profiles import ProfileError, load_profile
-from .report import write_reports
+from .report import detect_platform, notebook_id, tool_version, write_reports
 
 
 @dataclass
@@ -79,6 +80,10 @@ class NotebookRunResult:
     labels: dict = field(default_factory=dict)  # label -> count
     cell_errors: list = field(default_factory=list)
     changed_credentials: list = field(default_factory=list)  # credential files the notebook overwrote (restored)
+    notebook_id: str = ""   # <repo url>/<notebook path>, the same on every platform
+    env_source: str = "platform-kernel"  # "built", "platform-kernel" or "fallback" (environment file but no kernel)
+    env_file: str | None = None  # environment file in the repo that applies to the notebook
+    env_sha256: str | None = None
 
 
 def _preview(cell, max_len=70):
@@ -155,7 +160,8 @@ def execute(nb_path, kernel, timeout, out_dir, labeler):
     return errors, duration, out_path
 
 
-def run_notebook(repo_name, repo_root, nb_path, kernel, timeout, out_dir, rerun_wait, labeler, protect_files):
+def run_notebook(repo_name, repo_root, nb_path, kernel, timeout, out_dir, rerun_wait, labeler, protect_files,
+                 repo_url=None, env=None):
     rel = os.path.relpath(nb_path, repo_root)
     print(f"▶ {repo_name}/{rel} (kernel {kernel})", flush=True)
     snap, changed = snapshot_credentials(protect_files), set()
@@ -187,7 +193,8 @@ def run_notebook(repo_name, repo_root, nb_path, kernel, timeout, out_dir, rerun_
         errored_path=str(out_path) if status == "error" else None,
         error_message=f"{len(errors)} cell error(s)" if errors else None,
         reran=reran, labels=labels, cell_errors=[asdict(e) for e in errors],
-        changed_credentials=sorted(changed),
+        changed_credentials=sorted(changed), notebook_id=notebook_id(repo_url, repo_name, rel),
+        **(env or {}),
     )
 
 
@@ -284,6 +291,7 @@ def run_repo(entry, defaults, workdir, profile):
     labeler = Labeler(profile)
     notebooks = find_notebooks(root, list(entry.get("skip", [])) + repo_skips(root)) if root.is_dir() else [root]
     build = entry.get("environments", defaults.get("environments")) == "build"
+    platform = detect_platform(defaults.get("platform"))
     repo_root = root if root.is_dir() else git_root(root)
     built = load_built(workdir)
     if built:
@@ -328,9 +336,12 @@ def run_repo(entry, defaults, workdir, profile):
         if own and own not in installed:
             installed = _installed_kernels()
         kernel = own or choose_kernel(nb, wanted, installed)
+        env = {"env_source": "built" if own else ("fallback" if env_file and platform == "local" else "platform-kernel"),
+               "env_file": os.path.relpath(env_file, repo_root) if env_file else None,
+               "env_sha256": file_hash(env_file) if env_file else None}
         out_dir = workdir / "outputs" / name / Path(os.path.relpath(nb_path.parent, root))
         results.append(run_notebook(name, root, nb_path, kernel, timeout, out_dir, rerun_wait, labeler,
-                                    profile.get("protect_files", [])))
+                                    profile.get("protect_files", []), url, env))
     return {"repo": name, "profile": profile["name"], "url": url, "commit": commit, "environments": env_logs, "results": results}
 
 
@@ -373,7 +384,8 @@ def main(argv=None):
             continue
         repos.append(run_repo(entry, cfg, workdir, profiles[id(entry)]))
 
-    run = {"started_at": started, "finished_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+    run = {"platform": detect_platform(cfg.get("platform")), "tool_version": tool_version(),
+           "started_at": started, "finished_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
            "host": os.uname().nodename, "repos": repos}
     paths = write_reports(run, workdir / "reports", [default_profile] + list(profiles.values()), a.report_name)
     print(f"\nReports: {', '.join(str(p) for p in paths)}")

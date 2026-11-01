@@ -90,6 +90,8 @@ A profile can `extends:` another (name, or path relative to the file). Mappings 
 
 ```text
 schema_version  1
+platform        "local" or "wekeo-jupyterhub" (config key `platform`; else the JupyterHub if JUPYTERHUB_API_URL is set)
+tool_version    version of notebook-test that wrote the report
 profile         name of the default profile
 labels          {label id: {text, blocking}}      everything needed to read the labels
 texts           {title, dashboard_title, error_types_note, protect_note, exclude_note}
@@ -97,7 +99,10 @@ started_at, finished_at, host
 repos[]         repo, profile, url, commit, environments, results[]
   results[]     repo, notebook (path in the repo), status ("ok"/"error"), duration_s, kernel,
                 executed_path / errored_path, error_message, reran, labels {id: count},
-                changed_credentials[], cell_errors[]
+                changed_credentials[], cell_errors[],
+                notebook_id (<repo url>/<notebook path>, lower-case host and owner, the same on every platform),
+                env_source ("built"; "platform-kernel" when the notebook ran in the platform's own kernel; "fallback" when a local run found an environment file but ran in the default kernel), env_file (path in the repo or null),
+                env_sha256 (or null)
     cell_errors[]  cell_number, code_cell_number, cell_preview, error_name, error_value,
                    traceback_last_lines, label
 ```

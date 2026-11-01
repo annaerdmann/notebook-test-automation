@@ -191,3 +191,44 @@ def test_single_notebook_rerun_reuses_and_updates_the_built_environment(tmp_path
     reports = sorted((tmp_path / "work" / "reports").glob("*.json"))
     last = json.loads(reports[-1].read_text())
     assert last["repos"][0]["results"][0]["kernel"] == "python3"
+
+
+def test_report_has_platform_tool_version_and_notebook_fields(tmp_path, monkeypatch):
+    monkeypatch.delenv("JUPYTERHUB_API_URL", raising=False)
+    (tmp_path / "nbs").mkdir()
+    nbformat.write(new_notebook(cells=[new_code_cell("1")]), tmp_path / "nbs" / "ok.ipynb")
+    (tmp_path / "nbs" / "environment.yml").write_text("name: x\n")
+    assert main(["--path", str(tmp_path / "nbs"), "--workdir", str(tmp_path / "w"), "--kernel", "python3"]) == 0
+    report = json.loads(next((tmp_path / "w" / "reports").glob("*.json")).read_text())
+    jsonschema.validate(report, json.loads((__import__("pathlib").Path(report_module.__file__).parent / "report.schema.json").read_text()))
+    assert report["platform"] == "local" and report["tool_version"]
+    res = report["repos"][0]["results"][0]
+    assert res["notebook_id"] == "nbs/ok.ipynb"
+    assert res["env_file"] == "environment.yml" and len(res["env_sha256"]) == 64
+    assert res["env_source"] == "fallback"  # an environment file exists but nothing was built
+
+
+def test_platform_comes_from_config_or_jupyterhub_variable(monkeypatch):
+    monkeypatch.delenv("JUPYTERHUB_API_URL", raising=False)
+    assert report_module.detect_platform() == "local"
+    monkeypatch.setenv("JUPYTERHUB_API_URL", "http://hub/api")
+    assert report_module.detect_platform() == "wekeo-jupyterhub"
+    assert report_module.detect_platform("local") == "local"
+
+
+def test_notebook_id_normalises_the_repository_url():
+    f = report_module.notebook_id
+    assert f("https://GitHub.com/WEkEO/wekeo-hda.git", "x", "a/b.ipynb") == "https://github.com/wekeo/wekeo-hda/a/b.ipynb"
+    assert f("git@github.com:wekeo/wekeo-hda.git", "x", "b.ipynb") == "https://github.com/wekeo/wekeo-hda/b.ipynb"
+    assert f(None, "demo", "b.ipynb") == "demo/b.ipynb"
+
+
+def test_env_source_on_the_jupyterhub_is_the_platform_kernel(tmp_path, monkeypatch):
+    monkeypatch.setenv("JUPYTERHUB_API_URL", "http://hub/api")
+    (tmp_path / "nbs").mkdir()
+    nbformat.write(new_notebook(cells=[new_code_cell("1")]), tmp_path / "nbs" / "ok.ipynb")
+    (tmp_path / "nbs" / "environment.yml").write_text("name: x\n")
+    assert main(["--path", str(tmp_path / "nbs"), "--workdir", str(tmp_path / "w"), "--kernel", "python3"]) == 0
+    report = json.loads(next((tmp_path / "w" / "reports").glob("*.json")).read_text())
+    assert report["platform"] == "wekeo-jupyterhub"
+    assert report["repos"][0]["results"][0]["env_source"] == "platform-kernel"
