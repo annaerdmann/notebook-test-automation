@@ -232,3 +232,12 @@ def test_env_source_on_the_jupyterhub_is_the_platform_kernel(tmp_path, monkeypat
     report = json.loads(next((tmp_path / "w" / "reports").glob("*.json")).read_text())
     assert report["platform"] == "wekeo-jupyterhub"
     assert report["repos"][0]["results"][0]["env_source"] == "platform-kernel"
+
+
+def test_skip_globs_can_keep_single_notebooks():
+    from notebook_test.run import is_skipped
+    globs = ["ibm/**", "!ibm/ocean/notebooks/fine_tuning.ipynb"]
+    assert is_skipped("ibm/flood/notebooks/1.ipynb", globs)
+    assert is_skipped("ibm/ocean/notebooks/other.ipynb", globs)
+    assert not is_skipped("ibm/ocean/notebooks/fine_tuning.ipynb", globs)
+    assert not is_skipped("own/a.ipynb", globs)
