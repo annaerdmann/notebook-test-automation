@@ -198,3 +198,32 @@ def build_status(reports):
             "labels": _labels(reports),
             "issue_counts": {"open": sum(i["state"] == "open" for i in issues),
                              "closed": sum(i["state"] == "closed" for i in issues)}}
+
+
+def issues_markdown(issues, labels=None):
+    """The open issues as Markdown, one section each, to hand to a person or an LLM."""
+    labels = labels or {}
+    open_issues = [i for i in issues if i["state"] == "open"]
+    lines = ["# Open notebook test issues", "", f"{len(open_issues)} open issue(s).", ""]
+    for i in open_issues:
+        name = f"[{i['notebook']}]({i['link']})" if i.get("link") else f"`{i['notebook']}`"
+        lines += [f"## {i['repo']}: {i['notebook']} ({i['platform']}, {i['id']})", "",
+                  f"- Notebook: {name}",
+                  f"- Platform: {i['platform']}",
+                  f"- Label: {labels.get(i['label'], i['label'])} (`{i['label']}`)",
+                  f"- Error: cell {i['cell_number']}, `{i['error_name']}`: {' '.join(i['error_value'].split())}",
+                  f"- First seen: {i['first_seen']}, last seen: {i['last_seen']}",
+                  f"- Report: `{i['report']}`", ""]
+    return "\n".join(lines)
+
+
+def llms_txt(status):
+    """Index of the machine-readable files, in the llms.txt format."""
+    c = status["issue_counts"]
+    return "\n".join([
+        "# Notebook test dashboard", "",
+        f"> Results of the weekly notebook tests: {c['open']} open and {c['closed']} closed issue(s). "
+        "All files are computed from the same reports as the page.", "",
+        "- [status.json](/status.json): pass rates overall and per repository, every notebook with its newest result per platform, history",
+        "- [issues.json](/issues.json): all issues with first seen, last seen and closed date",
+        "- [issues.md](/issues.md): the open issues, one section each", ""])

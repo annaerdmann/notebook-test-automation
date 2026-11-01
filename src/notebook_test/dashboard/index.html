@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Notebook test dashboard</title>
+<style>
+:root{--bg:#fff;--fg:#1c2430;--muted:#5b6675;--line:#e3e7ec;--card:#f6f8fa;--ok:#1f7a4d;--bad:#b42318;--na:#7b8794;--accent:#1a4696;--c-local:#1a4696;--c-jh:#b45309}
+@media (prefers-color-scheme:dark){:root{--bg:#12161c;--fg:#e6e9ee;--muted:#9aa4b2;--line:#2a313b;--card:#1a2029;--ok:#4cc38a;--bad:#f2766b;--na:#8b97a6;--accent:#7aa2ff;--c-local:#7aa2ff;--c-jh:#f0a04b}}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,sans-serif;margin:0 auto;max-width:1200px;padding:20px 16px}
+h1{font-size:22px;margin:0}
+h2{font-size:17px;margin:24px 0 8px}
+header{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;margin-bottom:12px}
+.sub{color:var(--muted);font-size:13px}
+button,select,input{font:inherit;color:var(--fg);background:var(--card);border:1px solid var(--line);border-radius:6px;padding:4px 10px}
+button{cursor:pointer}
+nav{display:flex;gap:4px;border-bottom:1px solid var(--line);margin:12px 0}
+nav button{border:0;border-bottom:3px solid transparent;border-radius:0;background:none;padding:8px 14px}
+nav button[aria-selected=true]{border-bottom-color:var(--accent);font-weight:600}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px 14px}
+.card .big{font-size:30px;font-weight:700;line-height:1.2}
+.card .lbl{color:var(--muted);font-size:13px}
+.wrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%}
+th,td{border-bottom:1px solid var(--line);padding:6px 8px;text-align:left;vertical-align:top}
+th{color:var(--muted);font-size:13px;font-weight:600;white-space:nowrap}
+th.sort{cursor:pointer}
+th.sort[aria-sort=ascending]::after{content:" ▲"}
+th.sort[aria-sort=descending]::after{content:" ▼"}
+td.num,th.num{text-align:right}
+.ok{color:var(--ok)}.bad{color:var(--bad)}.na{color:var(--na)}
+tr.greyed td{color:var(--na)}
+.msg{color:var(--muted);font-size:13px}
+a{color:var(--accent)}
+.filters{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0}
+.bar{display:inline-block;width:80px;height:8px;background:var(--line);border-radius:4px;vertical-align:middle;margin-right:6px}
+.bar span{display:block;height:8px;background:var(--ok);border-radius:4px}
+.legend{display:flex;gap:16px;font-size:13px;color:var(--muted)}
+.legend i{display:inline-block;width:14px;height:3px;vertical-align:middle;margin-right:4px}
+.banner{background:var(--card);border:1px solid var(--bad);border-radius:6px;padding:6px 10px;margin:8px 0;color:var(--bad)}
+svg text{fill:var(--muted);font-size:11px}
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Notebook test dashboard</h1>
+    <div class="sub" id="meta">Loading…</div>
+  </div>
+  <button id="refresh" type="button">Refresh</button>
+</header>
+<div id="banner"></div>
+<nav role="tablist">
+  <button role="tab" data-tab="overview" aria-selected="true">Overview</button>
+  <button role="tab" data-tab="notebooks" aria-selected="false">Notebooks</button>
+  <button role="tab" data-tab="issues" aria-selected="false">Issues</button>
+</nav>
+
+<section id="overview">
+  <div class="cards" id="cards"></div>
+  <h2>Repositories</h2>
+  <div class="wrap"><table id="repos"></table></div>
+  <h2>Pass rate over time</h2>
+  <div class="legend"><span><i style="background:var(--c-local)"></i>local</span><span><i style="background:var(--c-jh)"></i>JupyterHub</span></div>
+  <div id="chart" class="wrap"></div>
+</section>
+
+<section id="notebooks" hidden>
+  <div class="filters">
+    <select id="f-repo" aria-label="Repository"></select>
+    <select id="f-platform" aria-label="Platform">
+      <option value="">Both platforms</option><option value="local">Local</option><option value="wekeo-jupyterhub">JupyterHub</option>
+    </select>
+    <select id="f-status" aria-label="Status">
+      <option value="">Any status</option><option value="ok">Passed</option><option value="error">Failed</option><option value="na">Not applicable</option>
+    </select>
+    <input id="f-text" type="search" placeholder="Search notebook or error" aria-label="Search">
+    <span class="sub" id="nb-count"></span>
+  </div>
+  <div class="wrap"><table id="nbs"></table></div>
+</section>
+
+<section id="issues" hidden>
+  <div class="filters">
+    <select id="i-state" aria-label="Issue state">
+      <option value="open">Open</option><option value="closed">Closed (most recent first)</option><option value="">All</option>
+    </select>
+    <select id="i-platform" aria-label="Platform">
+      <option value="">Both platforms</option><option value="local">Local</option><option value="wekeo-jupyterhub">JupyterHub</option>
+    </select>
+    <input id="i-text" type="search" placeholder="Search" aria-label="Search issues">
+    <span class="sub" id="is-count"></span>
+    <span class="sub">Also as <a href="/issues.json">issues.json</a>, <a href="/issues.md">issues.md</a>, <a href="/llms.txt">llms.txt</a>, <a href="/status.json">status.json</a></span>
+  </div>
+  <div class="wrap"><table id="iss"></table></div>
+</section>
+
+<script>
+"use strict";
+const PLATFORMS = ["local", "wekeo-jupyterhub"];
+const PNAME = {"local": "Local", "wekeo-jupyterhub": "JupyterHub"};
+let status = null, issues = [];
+const sorts = {nbs: {key: "notebook", dir: 1}, iss: {key: "first_seen", dir: -1}, repos: {key: "repo", dir: 1}};
+
+// Element helper: text is always set as text, never as HTML (error messages come from reports).
+function h(tag, attrs, ...kids) {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (v === null || v === undefined || v === false) continue;
+    if (k === "class") el.className = v; else el.setAttribute(k, v === true ? "" : v);
+  }
+  for (const kid of kids.flat()) if (kid !== null && kid !== undefined && kid !== false) el.append(kid);
+  return el;
+}
+const safeUrl = u => (typeof u === "string" && /^https?:\/\//.test(u)) ? u : null;
+const pct = v => v === null || v === undefined ? "–" : v.toFixed(0) + " %";
+const link = (text, url) => safeUrl(url) ? h("a", {href: url, target: "_blank", rel: "noopener noreferrer"}, text) : text;
+const labelText = l => (status.labels && status.labels[l]) || l;
+
+function cmp(a, b) {
+  if (a === b) return 0;
+  if (a === null || a === undefined || a === "") return 1;
+  if (b === null || b === undefined || b === "") return -1;
+  return a < b ? -1 : 1;
+}
+function sortedHead(table, id, cols, rerender) {
+  const s = sorts[id];
+  return h("thead", {}, h("tr", {}, cols.map(([key, title, cls]) => {
+    const th = h("th", {class: "sort " + (cls || ""), tabindex: 0, "aria-sort": s.key === key ? (s.dir > 0 ? "ascending" : "descending") : "none"}, title);
+    const go = () => { s.dir = s.key === key ? -s.dir : 1; s.key = key; rerender(); };
+    th.addEventListener("click", go);
+    th.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } });
+    return th;
+  })));
+}
+const sortRows = (rows, id, get) => { const s = sorts[id]; return rows.slice().sort((a, b) => s.dir * cmp(get(a, s.key), get(b, s.key))); };
+
+function resultCell(n, p) {
+  const r = n[p];
+  if (p === "local" && n.not_applicable_locally) return h("td", {class: "na"}, "n/a (needs JupyterHub)", r ? h("div", {class: "msg"}, r.date) : null);
+  if (!r) return h("td", {class: "na"}, "–");
+  return h("td", {}, h("span", {class: r.status === "ok" ? "ok" : "bad"}, r.status === "ok" ? "✔ pass" : "✖ fail"), h("div", {class: "msg"}, r.date));
+}
+const nbStatus = (n, p) => (p === "local" && n.not_applicable_locally) ? "na" : (n[p] ? n[p].status : "");
+
+function renderOverview() {
+  const o = status.overall, ni = status.issue_counts;
+  const card = (big, lbl, sub) => h("div", {class: "card"}, h("div", {class: "big"}, big), h("div", {class: "lbl"}, lbl), h("div", {class: "msg"}, sub));
+  document.getElementById("cards").replaceChildren(
+    card(pct(o.local.pct), "Local pass rate", `${o.local.applicable_passed} of ${o.local.applicable} applicable notebooks · newest run ${status.latest_run.local || "–"}`),
+    card(pct(o["wekeo-jupyterhub"].pct), "JupyterHub pass rate", `${o["wekeo-jupyterhub"].passed} of ${o["wekeo-jupyterhub"].total} notebooks · newest run ${status.latest_run["wekeo-jupyterhub"] || "–"}`),
+    card(String(ni.open), "Open issues", `${ni.closed} closed`),
+    card(String(status.notebooks.length), "Notebooks", `${status.notebooks.filter(n => n.not_applicable_locally).length} not applicable locally`));
+  const t = document.getElementById("repos");
+  const cols = [["repo", "Repository"], ["notebooks", "Notebooks", "num"], ["local", "Local pass rate"], ["wekeo-jupyterhub", "JupyterHub pass rate"]];
+  const get = (r, k) => PLATFORMS.includes(k) ? r[k].pct : r[k];
+  const bar = (r, p) => h("td", {}, h("span", {class: "bar"}, h("span", {style: `width:${r[p].pct || 0}%`})), r[p].total ? `${pct(r[p].pct)} (${r[p].applicable_passed}/${r[p].applicable})` : "–");
+  t.replaceChildren(sortedHead(t, "repos", cols, renderOverview), h("tbody", {}, sortRows(status.repos, "repos", get).map(r =>
+    h("tr", {}, h("td", {}, r.repo), h("td", {class: "num"}, String(r.notebooks)), bar(r, "local"), bar(r, "wekeo-jupyterhub")))));
+  renderChart();
+}
+
+function renderChart() {
+  const W = 760, H = 220, L = 36, B = 24, T = 10, R = 28;
+  const days = [...new Set(status.history.map(x => x.date))].sort();
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`); svg.setAttribute("width", "100%"); svg.setAttribute("role", "img");
+  svg.setAttribute("aria-label", "Pass rate over time for local and JupyterHub runs");
+  svg.style.maxWidth = W + "px";
+  const ns = (tag, a, text) => { const e = document.createElementNS(svg.namespaceURI, tag); for (const [k, v] of Object.entries(a)) e.setAttribute(k, v); if (text) e.textContent = text; return e; };
+  const x = d => L + (days.length < 2 ? (W - L - R) / 2 : (days.indexOf(d) / (days.length - 1)) * (W - L - R));
+  const y = v => T + (1 - v / 100) * (H - T - B);
+  for (const v of [0, 25, 50, 75, 100]) {
+    svg.append(ns("line", {x1: L, x2: W - R, y1: y(v), y2: y(v), stroke: "var(--line)"}), ns("text", {x: L - 6, y: y(v) + 4, "text-anchor": "end"}, v + "%"));
+  }
+  days.forEach((d, i) => { if (days.length <= 8 || i % Math.ceil(days.length / 8) === 0) svg.append(ns("text", {x: x(d), y: H - 6, "text-anchor": "middle"}, d.slice(5))); });
+  const colors = {"local": "var(--c-local)", "wekeo-jupyterhub": "var(--c-jh)"};
+  for (const p of PLATFORMS) {
+    const pts = status.history.filter(e => e.platform === p && e.pct !== null);
+    if (!pts.length) continue;
+    svg.append(ns("polyline", {points: pts.map(e => `${x(e.date)},${y(e.pct)}`).join(" "), fill: "none", stroke: colors[p], "stroke-width": 2}));
+    for (const e of pts) {
+      const c = ns("circle", {cx: x(e.date), cy: y(e.pct), r: 4, fill: colors[p]});
+      c.append(ns("title", {}, `${PNAME[p]} ${e.date}: ${e.applicable_passed} of ${e.applicable} passed (${e.pct}%)`));
+      svg.append(c);
+    }
+  }
+  document.getElementById("chart").replaceChildren(days.length ? svg : h("p", {class: "msg"}, "No reports yet."));
+}
+
+function fillRepoFilter() {
+  const sel = document.getElementById("f-repo"), keep = sel.value;
+  sel.replaceChildren(h("option", {value: ""}, "All repositories"), status.repos.map(r => h("option", {value: r.repo}, r.repo)));
+  sel.value = [...sel.options].some(o => o.value === keep) ? keep : "";
+}
+
+function renderNotebooks() {
+  const repo = document.getElementById("f-repo").value, plat = document.getElementById("f-platform").value;
+  const st = document.getElementById("f-status").value, q = document.getElementById("f-text").value.toLowerCase();
+  const byId = Object.fromEntries(issues.map(i => [i.id, i]));
+  const firstIssue = n => byId[n.open_issues[0]] || null;
+  let rows = status.notebooks.filter(n => {
+    if (repo && n.repo !== repo) return false;
+    const ps = plat ? [plat] : PLATFORMS;
+    if (plat && !n[plat] && !(plat === "local" && n.not_applicable_locally)) return false;
+    if (st && !ps.some(p => nbStatus(n, p) === st)) return false;
+    if (q) {
+      const err = firstIssue(n);
+      if (!(n.notebook + " " + n.repo + " " + (err ? err.error_name + " " + err.error_value : "")).toLowerCase().includes(q)) return false;
+    }
+    return true;
+  });
+  const get = (n, k) => k === "local" ? (n.not_applicable_locally ? "n/a" : n.local && n.local.status) : k === "wekeo-jupyterhub" ? (n[k] && n[k].status)
+    : k === "issue" ? (firstIssue(n) ? firstIssue(n).error_name : "") : n[k];
+  rows = sortRows(rows, "nbs", get);
+  document.getElementById("nb-count").textContent = `${rows.length} of ${status.notebooks.length} notebooks`;
+  const t = document.getElementById("nbs");
+  t.replaceChildren(sortedHead(t, "nbs", [["repo", "Repository"], ["notebook", "Notebook"], ["local", "Local"], ["wekeo-jupyterhub", "JupyterHub"], ["issue", "First open issue"]], renderNotebooks),
+    h("tbody", {}, rows.map(n => {
+      const i = firstIssue(n);
+      return h("tr", {}, h("td", {}, n.repo), h("td", {}, link(n.notebook, n.link)), resultCell(n, "local"), resultCell(n, "wekeo-jupyterhub"),
+        h("td", {}, i ? [h("span", {}, `${PNAME[i.platform]} · ${labelText(i.label)}`), h("div", {class: "msg"}, `cell ${i.cell_number}: ${i.error_name}: ${i.error_value}`.slice(0, 200))] : ""));
+    })));
+}
+
+function renderIssues() {
+  const state = document.getElementById("i-state").value, plat = document.getElementById("i-platform").value;
+  const q = document.getElementById("i-text").value.toLowerCase();
+  let rows = issues.filter(i => (!state || i.state === state) && (!plat || i.platform === plat) &&
+    (!q || (i.notebook + " " + i.repo + " " + i.error_name + " " + i.error_value + " " + i.label).toLowerCase().includes(q)));
+  if (state === "closed" && sorts.iss.key === "first_seen") { sorts.iss.key = "closed_at"; sorts.iss.dir = -1; }
+  rows = sortRows(rows, "iss", (i, k) => i[k]);
+  document.getElementById("is-count").textContent = `${rows.length} issues`;
+  const t = document.getElementById("iss");
+  t.replaceChildren(sortedHead(t, "iss", [["notebook", "Notebook"], ["platform", "Platform"], ["label", "Type"], ["error_name", "Error"], ["first_seen", "First seen"], ["last_seen", "Last seen"], ["closed_at", "Closed"]], renderIssues),
+    h("tbody", {}, rows.map(i => h("tr", {}, h("td", {}, link(i.notebook, i.link), h("div", {class: "msg"}, i.repo)), h("td", {}, PNAME[i.platform]),
+      h("td", {}, labelText(i.label)), h("td", {}, i.error_name, h("div", {class: "msg"}, `cell ${i.cell_number}: ${i.error_value}`.slice(0, 200))),
+      h("td", {}, i.first_seen), h("td", {}, i.last_seen),
+      h("td", {class: i.closed_at ? "ok" : ""}, i.closed_at ? [i.closed_at, i.commits_between && i.commits_between.closing ? h("div", {class: "msg"}, `commit ${i.commits_between.closing.slice(0, 7)}`) : null] : "open")))));
+}
+
+function renderAll() {
+  const m = document.getElementById("meta");
+  m.textContent = `Source: ${status.source} · fetched ${status.fetched_at}`;
+  document.getElementById("banner").replaceChildren(status.source_error ? h("div", {class: "banner"}, status.source_error) : "");
+  fillRepoFilter(); renderOverview(); renderNotebooks(); renderIssues();
+}
+
+async function load() {
+  const [s, i] = await Promise.all([fetch("/status.json"), fetch("/issues.json")]);
+  status = await s.json(); issues = await i.json();
+  renderAll();
+}
+async function refresh() {
+  const b = document.getElementById("refresh");
+  b.disabled = true; b.textContent = "Refreshing…";
+  try { await fetch("/refresh", {method: "POST"}); await load(); }
+  catch (e) { document.getElementById("banner").replaceChildren(h("div", {class: "banner"}, "Refresh failed: " + e.message)); }
+  b.disabled = false; b.textContent = "Refresh";
+}
+
+document.getElementById("refresh").addEventListener("click", refresh);
+for (const id of ["f-repo", "f-platform", "f-status", "f-text"]) document.getElementById(id).addEventListener("input", renderNotebooks);
+for (const id of ["i-state", "i-platform", "i-text"]) document.getElementById(id).addEventListener("input", renderIssues);
+for (const b of document.querySelectorAll("nav button")) b.addEventListener("click", () => {
+  for (const x of document.querySelectorAll("nav button")) x.setAttribute("aria-selected", String(x === b));
+  for (const s of ["overview", "notebooks", "issues"]) document.getElementById(s).hidden = s !== b.dataset.tab;
+});
+load().catch(e => { document.getElementById("meta").textContent = "Could not load data: " + e.message; });
+</script>
+</body>
+</html>

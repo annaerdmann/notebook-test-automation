@@ -59,6 +59,21 @@ notebook-test relabel old_report.json --profile wekeo --out new_report.json
 
 `catalog` lists notebooks whose errors carry a `blocking` label. `relabel` labels the errors of an existing report again with another profile (follow-on labels are kept). Reports from before `schema_version` 1 need `--profile` for `dashboard` and `catalog`.
 
+## Interactive dashboard
+
+```bash
+notebook-test dashboard --serve --source <folder of reports or git URL> [--port 8765] [--cache DIR]
+```
+
+Serves http://127.0.0.1:8765 (this machine only). The source is a folder, or the git URL of a repository that holds reports (`reports/<platform>/<date>-<repo>.json`, platform `local` or `wekeo-jupyterhub`); a URL is cloned into `--cache` and pulled on the Refresh button and on page load when the last pull is over 10 minutes old. Nothing is stored: every number is computed from the reports.
+
+- Overview: local and JupyterHub pass rates, per-repository rates, pass rate over time.
+- Notebooks: newest result per platform, filter by repository, platform, status and text, sortable. Notebooks whose newest result has the label `platform` (needs JupyterHub service) are "not applicable locally": grey, and left out of the local pass rate.
+- Issues: one per notebook, platform, label and error name (first error that is not a follow-on error), open or closed, with first seen, last seen and closing date.
+- Data for scripts and LLMs: `/status.json`, `/issues.json`, `/issues.md` (open issues, one section each) and `/llms.txt` (index of these files).
+
+`notebook-test dashboard REPORT.json --out page.html` still writes the static one-run page.
+
 ## Profiles
 
 Bundled profiles live in `src/notebook_test/profiles/`; the format is described by `profile.schema.json` there, and `generic.yml` documents every key.

@@ -2,11 +2,13 @@
 
 Usage:
     notebook-test dashboard REPORT.json [REPORT.json ...] --out dashboard.html
+    notebook-test dashboard --serve --source FOLDER_OR_GIT_URL [--port 8765] [--cache DIR]
     notebook-test catalog REPORT.json --out catalog_exclude.json [--profile NAME_OR_FILE]
     notebook-test relabel REPORT.json --profile NAME_OR_FILE --out NEW.json
 
 The dashboard shows the newest report in detail and the pass rate of every report given, so a
-folder of quarterly reports becomes a history. The catalog list names notebooks that failed for
+folder of quarterly reports becomes a history. With `--serve` the dashboard is an interactive page on
+127.0.0.1 that reads all reports in a folder or git repository (see serve.py and status.py). The catalog list names notebooks that failed for
 reasons the author has to fix (labels the profile marks `blocking`); service outages and
 test-account credential problems do not count. Reports carry their labels; reports from before
 schema_version 1 need `--profile`.
@@ -125,10 +127,21 @@ details{{border:1px solid var(--line);border-radius:8px;padding:6px 12px;margin:
 
 def main_dashboard(argv=None):
     ap = argparse.ArgumentParser(prog="notebook-test dashboard")
-    ap.add_argument("reports", nargs="+")
+    ap.add_argument("reports", nargs="*")
     ap.add_argument("--profile", help="profile for reports without labels (older format)")
     ap.add_argument("--out", default="dashboard.html")
+    ap.add_argument("--serve", action="store_true", help="serve the interactive dashboard on 127.0.0.1")
+    ap.add_argument("--source", help="with --serve: folder of reports, or git URL of the results repository")
+    ap.add_argument("--port", type=int, default=8765)
+    ap.add_argument("--cache", default="~/.cache/notebook-test/results", help="where a git source is cloned")
     a = ap.parse_args(argv)
+    if a.serve:
+        if not a.source:
+            ap.error("--serve needs --source")
+        from .serve import serve
+        return serve(a.source, a.port, a.cache)
+    if not a.reports:
+        ap.error("give report files, or --serve --source")
     Path(a.out).write_text(dashboard_html(_load(a.reports, a.profile)))
     print(f"Dashboard: {a.out}")
     return 0

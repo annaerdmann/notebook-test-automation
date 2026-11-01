@@ -26,4 +26,4 @@ notebook-test = "notebook_test.__main__:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-notebook_test = ["profiles/*.yml", "profiles/*.json", "*.json"]
+notebook_test = ["profiles/*.yml", "profiles/*.json", "*.json", "dashboard/*.html"]
