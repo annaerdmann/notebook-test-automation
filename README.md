@@ -37,6 +37,8 @@ repos:
     profile: wekeo        # optional, per repository
 ```
 
+In `skip`, a glob starting with `!` keeps a notebook that another glob would skip: `skip: ["sub/**", "!sub/keep.ipynb"]`.
+
 A repository's own `skip_notebooks` globs in `.github/notebook-qa.yml` (shared with notebook-qa) are honoured too. Submodules are cloned. Reports go to `<workdir>/reports/`, executed notebooks to `<workdir>/outputs/`. Executed notebooks can contain outputs from your account, so do not publish them. Remove the work folder to clean up everything, environments included.
 
 Reports are never overwritten: a second run on the same day gets its start time added to the file name (`notebook_test_report_2026-10-22_143005.json`), or name it yourself with `--report-name`.

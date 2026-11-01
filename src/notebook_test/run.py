@@ -28,7 +28,8 @@ Config file:
         ref: main                 # optional
         kernel: auto              # optional, overrides the default
         profile: wekeo            # optional, overrides the profile for this repository
-        skip: ["**/draft_*.ipynb"]  # optional globs, relative to the repo
+        skip: ["**/draft_*.ipynb"]  # optional globs, relative to the repo; a glob starting with "!" keeps
+                                  # notebooks that another glob would skip, e.g. ["sub/**", "!sub/keep.ipynb"]
         environments: build       # optional: build a conda env per environment.yml (needs micromamba,
                                   # mamba or conda) and run the notebooks below it in that env
                                   # (only for folders with notebooks in scope)
@@ -207,6 +208,12 @@ def git_root(path):
     return path.parent
 
 
+def is_skipped(rel, globs):
+    """True if a glob matches `rel` and no "!glob" (a notebook to keep) matches it."""
+    keep = [g[1:] for g in globs if g.startswith("!")]
+    return any(fnmatch(rel, g) for g in globs if not g.startswith("!")) and not any(fnmatch(rel, g) for g in keep)
+
+
 def find_notebooks(root, skip=()):
     out = []
     for p in sorted(root.rglob("*.ipynb")):
@@ -216,7 +223,7 @@ def find_notebooks(root, skip=()):
             continue
         if p.name.endswith((".executed.ipynb", ".errored.ipynb")):
             continue
-        if any(fnmatch(rel, g) for g in skip):
+        if is_skipped(rel, skip):
             continue
         out.append(p)
     return out
