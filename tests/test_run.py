@@ -221,3 +221,14 @@ def test_notebook_id_normalises_the_repository_url():
     assert f("https://GitHub.com/WEkEO/wekeo-hda.git", "x", "a/b.ipynb") == "https://github.com/wekeo/wekeo-hda/a/b.ipynb"
     assert f("git@github.com:wekeo/wekeo-hda.git", "x", "b.ipynb") == "https://github.com/wekeo/wekeo-hda/b.ipynb"
     assert f(None, "demo", "b.ipynb") == "demo/b.ipynb"
+
+
+def test_env_source_on_the_jupyterhub_is_the_platform_kernel(tmp_path, monkeypatch):
+    monkeypatch.setenv("JUPYTERHUB_API_URL", "http://hub/api")
+    (tmp_path / "nbs").mkdir()
+    nbformat.write(new_notebook(cells=[new_code_cell("1")]), tmp_path / "nbs" / "ok.ipynb")
+    (tmp_path / "nbs" / "environment.yml").write_text("name: x\n")
+    assert main(["--path", str(tmp_path / "nbs"), "--workdir", str(tmp_path / "w"), "--kernel", "python3"]) == 0
+    report = json.loads(next((tmp_path / "w" / "reports").glob("*.json")).read_text())
+    assert report["platform"] == "wekeo-jupyterhub"
+    assert report["repos"][0]["results"][0]["env_source"] == "platform-kernel"
