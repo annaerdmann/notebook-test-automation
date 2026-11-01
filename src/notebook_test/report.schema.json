@@ -49,6 +49,15 @@
         "type": "string"
       }
     },
+    "platform": {
+      "enum": [
+        "local",
+        "wekeo-jupyterhub"
+      ]
+    },
+    "tool_version": {
+      "type": "string"
+    },
     "started_at": {
       "type": "string"
     },
@@ -185,6 +194,28 @@
                       }
                     }
                   }
+                },
+                "notebook_id": {
+                  "type": "string"
+                },
+                "env_source": {
+                  "enum": [
+                    "built",
+                    "platform-kernel",
+                    "fallback"
+                  ]
+                },
+                "env_file": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "env_sha256": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
                 },
                 "changed_credentials": {
                   "type": "array",

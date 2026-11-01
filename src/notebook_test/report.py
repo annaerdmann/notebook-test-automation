@@ -4,12 +4,48 @@ The JSON format is documented in the README (section "Report format") and descri
 """
 
 import json
+import os
+import re
 from dataclasses import asdict, is_dataclass
 from pathlib import Path
 
 from .labels import FOLLOW_ON
 
 SCHEMA_VERSION = 1
+PLATFORMS = ("local", "wekeo-jupyterhub")
+
+
+def detect_platform(configured=None):
+    """`platform` from the config; else the JupyterHub when JUPYTERHUB_API_URL is set, else local."""
+    if configured:
+        return configured
+    return "wekeo-jupyterhub" if os.environ.get("JUPYTERHUB_API_URL") else "local"
+
+
+def tool_version():
+    from importlib.metadata import PackageNotFoundError, version
+    try:
+        return version("notebook-test-automation")
+    except PackageNotFoundError:
+        return "unknown"
+
+
+def repo_key(url, name=None):
+    """Repository URL without `.git`, with lower-case host and owner (ssh URLs become https)."""
+    if not url:
+        return name or "unknown"
+    url = url.strip().rstrip("/").removesuffix(".git")
+    m = re.match(r"^(?:ssh://)?git@([^:/]+)[:/](.+)$", url)
+    if m:
+        url = f"https://{m.group(1)}/{m.group(2)}"
+    m = re.match(r"^(https?://)([^/]+)/([^/]+)(/.*)?$", url)
+    if m:
+        return f"{m.group(1)}{m.group(2).lower()}/{m.group(3).lower()}{m.group(4) or ''}"
+    return url
+
+
+def notebook_id(url, name, notebook):
+    return f"{repo_key(url, name)}/{notebook}"
 
 
 def _plain(obj):
