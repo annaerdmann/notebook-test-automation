@@ -82,6 +82,7 @@ class NotebookRunResult:
     cell_errors: list = field(default_factory=list)
     changed_credentials: list = field(default_factory=list)  # credential files the notebook overwrote (restored)
     notebook_id: str = ""   # <repo url>/<notebook path>, the same on every platform
+    kernel_requested: str | None = None  # kernelspec name in the notebook's metadata (never changed); `kernel` is the one used
     env_source: str = "platform-kernel"  # "built", "platform-kernel" or "fallback" (environment file but no kernel)
     env_file: str | None = None  # environment file in the repo that applies to the notebook
     env_sha256: str | None = None
@@ -343,7 +344,8 @@ def run_repo(entry, defaults, workdir, profile):
         if own and own not in installed:
             installed = _installed_kernels()
         kernel = own or choose_kernel(nb, wanted, installed)
-        env = {"env_source": "built" if own else ("fallback" if env_file and platform == "local" else "platform-kernel"),
+        env = {"kernel_requested": (nb.metadata.get("kernelspec") or {}).get("name"),
+               "env_source": "built" if own else ("fallback" if env_file and platform == "local" else "platform-kernel"),
                "env_file": os.path.relpath(env_file, repo_root) if env_file else None,
                "env_sha256": file_hash(env_file) if env_file else None}
         out_dir = workdir / "outputs" / name / Path(os.path.relpath(nb_path.parent, root))

@@ -241,3 +241,21 @@ def test_skip_globs_can_keep_single_notebooks():
     assert is_skipped("ibm/ocean/notebooks/other.ipynb", globs)
     assert not is_skipped("ibm/ocean/notebooks/fine_tuning.ipynb", globs)
     assert not is_skipped("own/a.ipynb", globs)
+
+
+def test_a_kernel_named_in_the_metadata_that_does_not_exist_is_replaced_and_reported(tmp_path):
+    nb = new_notebook(cells=[new_code_cell("print(1)")])
+    nb.metadata["kernelspec"] = {"name": "does-not-exist", "language": "python", "display_name": "x"}
+    (tmp_path / "nbs").mkdir()
+    nbformat.write(nb, tmp_path / "nbs" / "a.ipynb")
+    assert main(["--path", str(tmp_path / "nbs"), "--workdir", str(tmp_path / "w")]) == 0
+    report = json.loads(next((tmp_path / "w" / "reports").glob("*.json")).read_text())
+    jsonschema.validate(report, json.loads((__import__("pathlib").Path(report_module.__file__).parent / "report.schema.json").read_text()))
+    res = report["repos"][0]["results"][0]
+    assert (res["status"], res["kernel"], res["kernel_requested"]) == ("ok", "python3", "does-not-exist")
+    assert nbformat.read(tmp_path / "nbs" / "a.ipynb", as_version=4).metadata["kernelspec"]["name"] == "does-not-exist"
+
+
+def test_ipykernel_is_a_dependency_so_python3_exists_wherever_the_tool_is_installed():
+    from importlib.metadata import requires
+    assert any(r.lower().startswith("ipykernel") and "extra" not in r for r in requires("notebook-test-automation"))
