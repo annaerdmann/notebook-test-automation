@@ -198,6 +198,12 @@
                 "notebook_id": {
                   "type": "string"
                 },
+                "kernel_requested": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
                 "env_source": {
                   "enum": [
                     "built",

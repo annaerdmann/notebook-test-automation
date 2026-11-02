@@ -14,10 +14,11 @@ dependencies = [
     "nbclient>=0.10",
     "pyyaml>=6",
     "jsonschema>=4",
+    "ipykernel>=6",   # the default `python3` kernel must exist wherever notebook-test is installed
 ]
 
 [project.optional-dependencies]
-test = ["pytest>=8", "ipykernel>=6"]
+test = ["pytest>=8"]
 
 [project.scripts]
 notebook-test = "notebook_test.__main__:main"
